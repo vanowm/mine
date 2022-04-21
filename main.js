@@ -7,6 +7,9 @@ const elTable = document.getElementById("table"),
       elHeight = document.getElementById("height"),
       elBombs = document.getElementById("bombs"),
       elReset  = document.getElementById("reset"),
+      elBombsFound = document.getElementById("bombsFound"),
+      elBombsTotal = document.getElementById("bombsTotal"),
+      elClock = document.getElementById("clock"),
       BOMB = 9,
       OPEN = 16,
       FLAG = 32,
@@ -65,7 +68,13 @@ const elTable = document.getElementById("table"),
           return res ? value : undefined;
         }
       }),
-      table = [];
+      table = [],
+      stats = {
+        start: 0,
+        bombs: 0,
+        time: 0,
+        timestamp: 0,
+      };
 
 settings.init();
 init();
@@ -99,6 +108,9 @@ function onClick(e)
   const index = Array.from(elTable.children).indexOf(e.target),
         leftClick = e.type == "click";
 
+  if (!stats.start)
+    start();
+
 console.log(e);
   let val = table[index];
   if ((leftClick && val & OPEN+FLAG) || (!leftClick && val & OPEN))
@@ -119,6 +131,25 @@ console.log(e);
     delete e.target.dataset.type;
 
 //  e.target.textContent = val;
+}
+
+function start(timestamp)
+{
+  if (timestamp === undefined)
+    stats.start = new Date().getTime();
+
+  if (timestamp - stats.timestamp > 10)
+  {
+    stats.timestamp = timestamp;
+    if (stats.start)
+    {
+      stats.time = timestamp;
+    }
+    const msec = stats.start ? timestamp : stats.time;
+    elClock.textContent = msec;
+    elBombsFound.textContent = stats.bombs;
+  }
+  requestAnimationFrame(start);
 }
 
 function open(index)
@@ -175,6 +206,9 @@ function rand(min, max)
 
 function init()
 {
+  stats.time = 0;
+  stats.bombs = 0;
+  stats.start = 0;
   table.length = 0; //reset
   table.length = settings.width * settings.height;
   const bombs = [],
@@ -221,7 +255,8 @@ function init()
   }
   
   console.log(table);
-  
+  elBombsTotal.textContent = settings.bombs;
+  start(0);
 }// init();
 
 function indexToXY(index, width = settings.width, height = settings.height)

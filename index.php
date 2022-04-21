@@ -24,6 +24,10 @@
     </div>
     <div><span><button id="reset">Reset</button></span></div>
   </div>
+  <div class="stats">
+    <div><span>Time:</span><span id="clock">00:00:00</span></div>
+    <div><span>Bombs:</span><span><span id="bombsFound"></span>/<span id="bombsTotal"></span></span></div>
+  </div>
   <div id="table"></div>
   <script type="text/javascript" src="main.js"></script>
 </body>
