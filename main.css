@@ -1,0 +1,64 @@
+
+html
+{
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+#table
+{
+  display: inline-grid;
+  grid-template-columns: repeat(var(--cols), 1fr);
+  text-align: center;
+}
+
+#table > *
+{
+  border: 1px solid black;
+  margin-left: -1px;
+  margin-top: -1px;
+  width: 2em;
+  height: 2em;
+  vertical-align: middle;
+  line-height: 2em;
+}
+
+#table > *:hover
+{
+  box-shadow: 0 0 2px 0 black inset;
+}
+
+#table > *[data-type]::before
+{
+  position: relative;
+  top: 0;
+}
+#table > *[data-type]:not([data-type="9"]):not([data-type="32"]):not([data-type="0"])::before
+{
+  content: attr(data-type);
+}
+
+#table > *[data-type="32"]::before
+{
+  content: url(images/flag.svg);
+
+}
+#table > *[data-type="9"]::before
+{
+  content: url(images/mine.svg);
+
+}
+#table > *[data-type]
+{
+  background-color: rgb(118, 165, 252);
+}
+
+#table > *[data-type="32"]
+{
+  background-color: rgb(252, 178, 118);
+}
+
+#table > *[data-type="9"]
+{
+  background-color: rgb(252, 118, 118);
+}

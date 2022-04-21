@@ -1,5 +1,9 @@
 {
+  "jshint.options": {
+    "asi": false
+  },
   "cSpell.words": [
+    "browserslist",
     "Mine'ish's"
   ]
 }
