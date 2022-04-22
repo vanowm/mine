@@ -2,14 +2,7 @@
 {
 "use strict";
 
-const elTable = document.getElementById("table"),
-      elWidth = document.getElementById("width"),
-      elHeight = document.getElementById("height"),
-      elBombs = document.getElementById("bombs"),
-      elReset  = document.getElementById("reset"),
-      elBombsFound = document.getElementById("bombsFound"),
-      elBombsTotal = document.getElementById("bombsTotal"),
-      elClock = document.getElementById("clock"),
+const EL = new Proxy({},{get(target, prop){return prop in target ? target[prop] : (target[prop] = document.getElementById(prop));}}),
       BOMB = 9,
       OPEN = 16,
       FLAG = 32,
@@ -18,7 +11,7 @@ const elTable = document.getElementById("table"),
       {
         width: {default: 10, value: 10, min: 2, max: 1000},
         height: {default: 10, value: 10, min: 2, max: 1000},
-        bombs: {default: 3, value: 3, min: 1, max: 10000},
+        bombs: {default: 30, value: 30, min: 1, max: 10000},
       },
       {
         get(target, prop, proxy)
@@ -74,6 +67,7 @@ const elTable = document.getElementById("table"),
         bombs: 0,
         time: 0,
         timestamp: 0,
+        open: 0
       };
 
 settings.init();
@@ -94,24 +88,21 @@ init();
   });
 });
 
-elReset.addEventListener("click", init);
-elTable.addEventListener("click", onClick);
-elTable.addEventListener("auxclick", onClick);
-elTable.addEventListener("contextmenu", onClick);
+EL.reset.addEventListener("click", init);
+EL.table.addEventListener("click", onClick);
+EL.table.addEventListener("auxclick", onClick);
+EL.table.addEventListener("contextmenu", onClick);
 
 function onClick(e)
 {
   e.preventDefault();
-  if (e.target === elTable || e.type == "contextmenu")
+  if (e.target === EL.table || (e.type == "auxclick" && e.button == 2) || (!stats.start && stats.time))
     return;
 
-  const index = Array.from(elTable.children).indexOf(e.target),
+  console.log(e.type, e.button);
+  const index = Array.from(EL.table.children).indexOf(e.target),
         leftClick = e.type == "click";
 
-  if (!stats.start)
-    start();
-
-console.log(e);
   let val = table[index];
   if ((leftClick && val & OPEN+FLAG) || (!leftClick && val & OPEN))
     return console.log("already clicked");
@@ -119,17 +110,30 @@ console.log(e);
   if (leftClick && (val & 15) == BOMB)
     return gameover();
 
+  if (!stats.start)
+  start();
+
   if (leftClick)
     open(index);
   else
   {
     table[index] = val ^ FLAG;
     e.target.dataset.type = FLAG;
+    stats.bombs += val & FLAG ? -1 : 1;
   }
 
   if (!(table[index] & OPEN + FLAG))
     delete e.target.dataset.type;
 
+  if (stats.open + stats.bombs == settings.width * settings.height)
+  {
+    EL.table.classList.add("finished");
+    for(let i = 0; i < table.length; i++)
+      EL.table.children[i].dataset.type = table[i] & 15;
+
+    console.log("you win!");
+    stats.start = 0;
+  }
 //  e.target.textContent = val;
 }
 
@@ -143,13 +147,17 @@ function start(timestamp)
     stats.timestamp = timestamp;
     if (stats.start)
     {
-      stats.time = timestamp;
+      stats.time = new Date().getTime() - stats.start;
     }
-    const msec = stats.start ? timestamp : stats.time;
-    elClock.textContent = msec;
-    elBombsFound.textContent = stats.bombs;
+    EL.clock.textContent = getTime(stats.time);
+    EL.bombsFound.textContent = stats.bombs;
   }
   requestAnimationFrame(start);
+}
+
+function getTime(time)
+{
+  return time > 8553599999 ? "99:59:59.999" : new Date(time).toISOString().replace(/(\d+)T(\d+)/, (a,b,c) => (~~b-1? ("0"+Math.min(((~~b-1)*24+~~c), 99)).substr(-2) : c)).substr(8, 12);
 }
 
 function open(index)
@@ -158,7 +166,11 @@ function open(index)
   while(array.length)
   {
     index = array.pop();
-    elTable.children[index].dataset.type = table[index] & 15;
+    EL.table.children[index].dataset.type = table[index] & 15;
+    EL.table.children[index].classList.add("opened")
+    if (!(table[index] & OPEN))
+      stats.open++;
+
     table[index] |= OPEN;
     if (table[index] != OPEN)
       continue;
@@ -180,9 +192,13 @@ function open(index)
       if (!(val & OPEN))
       {
         if (val)
-          elTable.children[i].dataset.type = val;
+          EL.table.children[i].dataset.type = val;
+
+        if (!(table[i] & OPEN))
+          stats.open++;
 
         table[i] |= OPEN;
+        EL.table.children[i].classList.add("opened");
       }
   
     }
@@ -193,10 +209,12 @@ function open(index)
 function gameover()
 {
   console.log("game over");
+  stats.start = 0;
   for(let i = 0; i < table.length; i++)
   {
     table[i] |= OPEN;
-    elTable.children[i].dataset.type = table[i] & 15;
+    EL.table.children[i].dataset.type = table[i] & 15;
+    EL.table.children[i].classList.add("opened");
   }
 }
 function rand(min, max)
@@ -206,9 +224,10 @@ function rand(min, max)
 
 function init()
 {
-  stats.time = 0;
-  stats.bombs = 0;
-  stats.start = 0;
+  for(let i in stats)
+    stats[i] = 0;
+
+  EL.table.classList.remove("finished");
   table.length = 0; //reset
   table.length = settings.width * settings.height;
   const bombs = [],
@@ -223,8 +242,8 @@ function init()
   for(let i = 0; i < bombs.length; i++)
     table[bombs[i]] = BOMB;
 
-  while(elTable.children.length > table.length)
-    elTable.removeChild(elTable.lastChild);
+  while(EL.table.children.length > table.length)
+    EL.table.removeChild(EL.table.lastChild);
 
   for(let i = 0; i < table.length; i++)
   {
@@ -240,22 +259,23 @@ function init()
       }
       table[i] = bombsNum;
     }
-    const elCell = elTable.children[i] || document.createElement("span");
+    const elCell = EL.table.children[i] || document.createElement("span");
     if (!elCell.parentNode)
-      elTable.appendChild(elCell);
+      EL.table.appendChild(elCell);
 
     // elCell.textContent = table[i];
     delete elCell.dataset.type;
+    elCell.classList.remove("opened");
   }
-  elTable.style.setProperty("--cols", settings.width);
-  elTable.style.setProperty("--rows", settings.height);
+  EL.table.style.setProperty("--cols", settings.width);
+  EL.table.style.setProperty("--rows", settings.height);
   for(let i = 0; i < settings.height; i++)
   {
     console.log(table.slice(i * settings.width, i * settings.width + settings.width));
   }
   
   console.log(table);
-  elBombsTotal.textContent = settings.bombs;
+  EL.bombsTotal.textContent = settings.bombs;
   start(0);
 }// init();
 

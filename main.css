@@ -1,8 +1,18 @@
-
 html
 {
   -webkit-user-select: none;
   user-select: none;
+  font-family: Roboto-Regular, Roboto, sans-serif;
+  line-height: 1.6em;
+}
+
+.control > *
+{
+  display: inline-block;
+}
+.control input
+{
+  width: 3em;
 }
 
 #table
@@ -21,17 +31,27 @@ html
   height: 2em;
   vertical-align: middle;
   line-height: 2em;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  font-weight: bold;
 }
 
-#table > *:hover
+#table:not(.finished) > *:not(.opened):hover
 {
-  box-shadow: 0 0 2px 0 black inset;
+  box-shadow: 0 0 4px 0 black inset;
+}
+
+#table > *::before
+{
+  font-size: 1.3em;
 }
 
 #table > *[data-type]::before
 {
   position: relative;
   top: 0;
+  line-height: 0.9em;
 }
 #table > *[data-type]:not([data-type="9"]):not([data-type="32"]):not([data-type="0"])::before
 {
@@ -41,16 +61,17 @@ html
 #table > *[data-type="32"]::before
 {
   content: url(images/flag.svg);
-
+  line-height: 1em;
 }
 #table > *[data-type="9"]::before
 {
   content: url(images/mine.svg);
 
 }
-#table > *[data-type]
+#table > *[data-type],
+#table.finished > *
 {
-  background-color: rgb(118, 165, 252);
+  background-color: rgb(189, 212, 255);
 }
 
 #table > *[data-type="32"]
@@ -61,4 +82,9 @@ html
 #table > *[data-type="9"]
 {
   background-color: rgb(252, 118, 118);
+}
+
+#table.finished > *[data-type="9"]
+{
+  background-color: rgb(118, 252, 196);
 }
