@@ -5,21 +5,22 @@
 const EL = new Proxy({},{get(target, prop){return prop in target ? target[prop] : (target[prop] = document.getElementById(prop));}}),
       MINE = 9,
       OPEN = 16,
-      FLAG = 32,
+      SHOW = 32,
+      FLAG = 64,
       TYPE = OPEN - 1,
       OFFSET = [-1,-1,0,-1,1,-1,1,0,1,1,0,1,-1,1,-1,0], //offset around current coordinate
       anim = {
-        blink: false,
-        timers: {
-          blink: 0
-        }
+        clock: [],
+        shake: 0,
       },
       settings = new Proxy(
       {
         width: {default: 10, value: 10, min: 2, max: 300},
         height: {default: 10, value: 10, min: 2, max: 300},
         mines: {default: 20, value: 20, min: 1, max: 9998},
-        zoom: {default: 2.5, value: 2.5, min: 1, max: 7},
+        zoom: {default: 2.5, value: 2.5, min: 1, max: 20},
+        click: {default: true, value: true},
+        startOpen: {default: true, value: true},
         table: {default: [], value: []},
         stats: {
           start: 0,
@@ -27,7 +28,9 @@ const EL = new Proxy({},{get(target, prop){return prop in target ? target[prop] 
           time: 0,
           timestamp: 0,
           open: 0,
-          steps: []
+          pauseTime: 0,
+          pauseStart: 0,
+          steps: [] //list of indexes, bit1 = flag
         }
       },
       {
@@ -36,7 +39,10 @@ const EL = new Proxy({},{get(target, prop){return prop in target ? target[prop] 
           if (prop === "init")
             return () => this.init(target);
 
-          if (prop == "min" || prop == "max")
+          if (prop == "save")
+            return this.save(target);
+
+          if (["min", "max", "default"].includes(prop))
             return Object.keys(target).reduce((obj, key) => 
             {
               if (key == "mines" && prop == "max")
@@ -54,23 +60,11 @@ const EL = new Proxy({},{get(target, prop){return prop in target ? target[prop] 
         {
           value = this.check(target, prop, value);
 
-console.log(prop, value);
           if (value === undefined)
             return;
 
           target[prop].value = value;
-          localStorage.setItem("mineSettings",  JSON.stringify(Object.keys(target).reduce((obj, key) =>
-          {
-            let val = target[key].value;
-            if (key == "table")
-              val = encode(val);
-
-            if (val === undefined)
-              val = target[key];
-
-            obj[key] = val;
-            return obj;
-          }, {})));
+          return this.save(target);
         },
 
         init(target, data)
@@ -108,9 +102,24 @@ console.log(prop, value);
 
         },
 
+        save(target)
+        {
+          return localStorage.setItem("mineSettings",  JSON.stringify(Object.keys(target).reduce((obj, key) =>
+          {
+            let val = target[key].value;
+            if (key == "table")
+              val = encode(val);
+
+            if (val === undefined)
+              val = target[key];
+
+            obj[key] = val;
+            return obj;
+          }, {})));
+        },
+
         check(target, prop, value)
         {
-console.log(prop, value, target);
           let res = prop in target && target[prop] !== null && (typeof target[prop].value == typeof value || typeof target[prop] == typeof value);
           if (res && target[prop] instanceof Object && target[prop] !== null && "min" in target[prop] && value < target[prop].min)
             return target[prop].min;
@@ -122,27 +131,54 @@ console.log(prop, value, target);
         }
       });
 
+let dragScroll = false;
 settings.init();
 setZoom();
-init(!settings.table.length);
-
-[...document.querySelectorAll(".control input")].map(el =>
+[...document.querySelectorAll(".control input, .control select")].map(el =>
 {
-  el.value = settings[el.id];
-  el.min = settings.min[el.id];
-  el.max = el.id == "mines" ? settings.width * settings.height - 1 : settings.max[el.id];
-  
+  if (el.type == "checkbox")
+  {
+    el.checked = settings[el.id];
+  }
+  else if (el.tagName == "SELECT")
+  {
+    let option = document.createElement("option");
+    for(let i = settings.min[el.id],  def = settings.default[el.id]; i <= settings.max[el.id]; i++)
+    {
+      option = option.cloneNode(true);
+      option.textContent = i;
+      option.value = i;
+      option.className = i == def ? "default" : "";
+      el.appendChild(option);
+    }
+    el.value = settings[el.id];
+  }
+  else
+  {
+    el.value = settings[el.id];
+    el.min = settings.min[el.id];
+    el.max = el.id == "mines" ? settings.width * settings.height - 1 : settings.max[el.id];
+
+  }
   let timer, timerFilter;
   el.addEventListener("input", e => 
   {
-    const value = Math.max(el.min, Math.min( ~~el.value, el.max));
-    clearTimeout(timerFilter);
-    if (el.value != value)
-    {
-      timerFilter = setTimeout(() => (el.value = value, init(true)), 3000);
-    }
+    const isCheckbox = el.type == "checkbox",
+          isSelect = el.tagName  == "SELECT",
+          value = isCheckbox ? el.checked : isSelect ? ~~el.value : Math.max(el.min, Math.min( ~~el.value, el.max));
 
+    if (!isCheckbox && !isSelect)
+    {
+      clearTimeout(timerFilter);
+      if (el.value != value)
+      {
+        timerFilter = setTimeout(() => (el.value = value, init(true)), 3000);
+      }
+    }
     settings[el.id] = value;
+    if (isCheckbox)
+      return;
+
     if (el.id != "mines")
     {
       const max = settings.width * settings.height - 1;
@@ -154,7 +190,8 @@ init(!settings.table.length);
       }
     }
     clearTimeout(timer);
-    timer = setTimeout(() => init(true), 300);
+    timer = setTimeout(() => init(true), isSelect ? 0 : 300);
+
   });
 });
 
@@ -204,11 +241,124 @@ init(!settings.table.length);
     scaling = false;
   });
 
+  window.addEventListener("wheel", e =>
+  {
+    if (!e.ctrlKey)
+      return;
+    
+    e.preventDefault();
+    e.stopPropagation();
+    let zoom = parseFloat(getComputedStyle(document.body).getPropertyValue("--zoom"));
+    // EL.difficulty.textContent = [settings.zoom, settings.min.zoom, settings.max.zoom];
+
+    zoom += e.deltaY < 0 ? 0.3 : -0.3;
+    if (zoom < settings.min.zoom)
+      zoom = settings.min.zoom;
+
+    if (zoom > settings.max.zoom)
+      zoom = settings.max.zoom;
+
+    settings.zoom = zoom;
+    timer = setTimeout(setZoom, 10);
+
+  },{passive: false});
+
+  const SCALE_X = 1,
+        SCALE_Y = 1,
+        tableBox = EL.table.parentNode;
+
+  let clientX = 0,
+      clientY = 0,
+      mouseDown = null;
+
+  const onMouseMove = e =>
+  {
+    if (e.timeStamp - mouseDown.timeStamp < 100000 /*this can be removed*/
+         && ((dragScroll && e.clientX == clientX && e.clientY == clientY)
+            || (!dragScroll && Math.hypot(e.clientX - clientX, e.clientY - clientY) < 8))) //allow 6px movement
+      return;
+
+    if (!dragScroll)
+    {
+      // ({clientX, clientY} = e);
+    }
+
+    document.body.classList.add("dragging");
+    tableBox.scrollBy(SCALE_X * (clientX - e.clientX), SCALE_Y * (clientY - e.clientY));
+    dragScroll = true;
+    // mouseDown.preventDefault();
+    // mouseDown.stopPropagation();
+    ({clientX, clientY} = e);
+
+  };
+  const onMouseUp = e =>
+  {
+    window.removeEventListener("mouseup", onMouseUp);
+    window.removeEventListener("mousemove", onMouseMove);
+    document.body.classList.remove("drag");
+    document.body.classList.remove("dragging");
+    // if (dragScroll)
+    // {
+    //   e.preventDefault();
+    //   e.stopPropagation();
+    //   console.log(e);
+    // }
+
+  };
+
+  EL.table.addEventListener("mousedown", e =>
+  {
+    mouseDown = e;
+    dragScroll = false;
+    ({clientX, clientY} = e);
+    e.preventDefault();
+    document.body.classList.add("drag");
+    window.addEventListener("mouseup", onMouseUp);
+    window.addEventListener("mousemove", onMouseMove);
+  });
 }
 EL.reset.addEventListener("click", init);
 EL.table.addEventListener("click", onClick);
 EL.table.addEventListener("auxclick", onClick);
 EL.table.addEventListener("contextmenu", onClick);
+EL.pause.addEventListener("click", e =>
+{
+  pause();
+});
+
+
+
+
+init(!settings.table.length);
+
+function pause(p)
+{
+  if (p === undefined)
+  {
+    p = !settings.stats.pauseTime;
+    if (p && !settings.stats.start)
+      return;
+  }
+
+  document.body.classList.toggle("pause", p ? true : false);
+  if (p)
+  {
+    if (!settings.stats.start)
+      return;
+
+    settings.stats.pauseTime = new Date().getTime();
+    settings.stats.pauseStart = settings.stats.start;
+    settings.stats.start = 0;
+  }
+  else
+  {
+    if (settings.stats.pauseTime )
+      settings.stats.start = new Date().getTime() - settings.stats.pauseTime  + settings.stats.pauseStart ;
+
+    settings.stats.pauseTime  = 0;
+  }
+  settings.save;
+}
 
 function setZoom(z)
 {
@@ -222,28 +372,31 @@ function setZoom(z)
 function onClick(e)
 {
   e.preventDefault();
-  if (e.target === EL.table || (e.type == "auxclick" && e.button == 2) || (!settings.stats.start && settings.stats.time))
+
+  if (dragScroll || e.target === EL.table || (e.type == "auxclick" && e.button == 2) || (!settings.stats.start && settings.stats.time))
     return;
 
   const index = Array.from(EL.table.children).indexOf(e.target),
-        leftClick = e.type == "click";
+        leftClick = settings.click ? e.type == "click" : e.type != "click";
 
   let val = settings.table[index];
-  if ((leftClick && val & OPEN+FLAG) || (!leftClick && val & OPEN))
+  if ((leftClick && (val & OPEN || val & FLAG || val & SHOW)) || (!leftClick && val & OPEN))
     return console.log("already clicked");
 
-  settings.stats.steps[settings.stats.steps.length] = index;
-  if (leftClick && (val & TYPE) == MINE)
-    return finished();
+  settings.stats.steps[settings.stats.steps.length] = (index << 1) | !leftClick; //set bit1 = flag
 
   if (!settings.stats.start)
     start();
 
   if (leftClick)
+  {
     open(index);
+    if ((val & TYPE) == MINE)
+      return finished();
+  }
   else
   {
-    settings.table[index] = val ^ FLAG;
+    settings.table[index] ^= FLAG;
     e.target.dataset.type = FLAG;
     settings.stats.mines += val & FLAG ? -1 : 1;
   }
@@ -254,34 +407,64 @@ function onClick(e)
   if (isWon())
     finished(true);
 
-  settings.table = settings.table;
+  settings.save;
   //  e.target.textContent = val;
 }
 
 function finished(won)
 {
+  EL.table.classList.add("finished");
   if (won)
   {
     console.log("you win!");
-    EL.table.classList.add("finished");
-    for(let i = 0; i < settings.table.length; i++)
-      EL.table.children[i].dataset.type = settings.table[i] & TYPE;
+    EL.table.classList.add("won");
 
   }
   else
   {
     console.log("game over");
-    for(let i = 0; i < settings.table.length; i++)
-    {
-      settings.table[i] |= OPEN;
-      EL.table.children[i].dataset.type = settings.table[i] & TYPE;
-      EL.table.children[i].classList.add("opened");
-    }
   }
+  for(let i = 0; i < settings.table.length; i++)
+  {
+    const cell = EL.table.children[i];
+    cell.classList.add("opened");
+    if (!(settings.table[i] & OPEN+FLAG))
+    {
+      settings.table[i] |= SHOW;
+      cell.classList.add("shown");
+    }
+    const type = settings.table[i] & TYPE;
+    cell.dataset.type = type;
+    if (settings.table[i] & FLAG)
+      cell.classList.add("flag");
+
+  }
+  EL.table.children[settings.stats.steps[settings.stats.steps.length - 1]>>1].classList.add("last");
   settings.stats.start = 0;
-  settings.table = settings.table; //save settings
+  settings.save; //save settings
 }
 
+function isFinished()
+{
+  let good = 0,
+      killed = 0;
+
+  for(let i = 0; i < settings.table.length; i++)
+  {
+    const val = settings.table[i],
+          type = val & TYPE,
+          isFlag = val & FLAG,
+          isOpen = val & OPEN,
+          isShow = val & SHOW;
+
+    if (type == MINE && isFlag || (type != MINE && !isFlag && isOpen))
+      good++;
+
+    if (isShow || (isOpen && type == MINE & !isFlag))
+      killed = 2;
+  }
+  return good == settings.table.length ? 1 : killed;
+}
 function isWon()
 {
   for(let i = 0; i < settings.table.length; i++)
@@ -289,7 +472,7 @@ function isWon()
     const val = settings.table[i],
           type = val & TYPE;
 
-    if (!(type != MINE && val & OPEN) && !(type == MINE && val & FLAG))
+    if (val & SHOW || (!(type != MINE && val & OPEN) && !(type == MINE && val & FLAG)))
       return false;
   }
   return true;
@@ -298,37 +481,56 @@ function isWon()
 function start(timestamp)
 {
   if (timestamp === undefined)
-  {
     settings.stats.start = new Date().getTime();
-  }
 
   if (timestamp - settings.stats.timestamp > 15)
   {
     settings.stats.timestamp = timestamp;
     if (settings.stats.start)
-    {
       settings.stats.time = new Date().getTime() - settings.stats.start;
-    }
-    let time = getTime(settings.stats.time).split(":");
+
+    let time = getTime(settings.stats.time).split(/[:.]/);
     for(let i = 0; i < time.length; i++)
-      EL.clock.children[i].textContent = time[i];
+    {
+      if (anim.clock[i] != time[i])
+      {
+        anim.clock[i] = time[i];
+        EL.clock.children[i].textContent = time[i];
+      }
+    }
 
     EL.minesFound.textContent = settings.stats.mines;
     EL.minesPercent.textContent = Math.round(settings.stats.mines * 100 / settings.mines); 
     EL.steps.textContent = settings.stats.steps.length;
+    EL.clock.classList.toggle("blink", time[3] > 500);
   }
-  if (timestamp - anim.timers.blink > 500)
+  if (!anim.shake || timestamp - anim.shake > 1000)
   {
-    anim.timers.blink = timestamp;
-    anim.blink = settings.stats.start && !anim.blink;
-    EL.clock.classList.toggle("blink", anim.blink);
+    anim.shake = timestamp;
+    let frames = "";
+    for(let i = 0; i < 101; i += 10)
+    {
+      frames += `${i}%{transform:translate(${~~(Math.random() * 10 -5)/60}em,${~~(Math.random() * 10 -5)/60}em) rotate(${~~(Math.random() * 10 -5)}deg);}`;
+    }
+    EL.shake.textContent = `@keyframes shake{${frames}}`;
+    
+    // document.body.style.setProperty("--shakeX", ~~(Math.random() * 10 -5) + "px" );
+    // document.body.style.setProperty("--shakeY", ~~(Math.random() * 10 -5) + "px" );
+    // document.body.style.setProperty("--shakeR", ~~(Math.random() * 4 -2) + "deg" );
+
   }
+  // if (timestamp - anim.timers.blink > 1000)
+  // {
+  //   anim.timers.blink = timestamp;
+  //   anim.blink = settings.stats.start && !anim.blink;
+  //   EL.clock.classList.toggle("blink", anim.blink);
+  // }
   requestAnimationFrame(start);
 }
 
 function getTime(time)
 {
-  return time > 8553599999 ? "99:59:59.999" : new Date(time).toISOString().replace(/(\d+)T(\d+)/, (a,b,c) => (~~b-1? ("0"+Math.min(((~~b-1)*24+~~c), 99)).substr(-2) : c)).substr(8, 12);
+  return time > 8553599999 ? "99:59:59.999" : new Date(time).toISOString().replace(/(\d+)T(\d+)/, (a,b,c) => (~~b-1? ("0"+Math.min(((~~b-1)*24+~~c), 99)).substr(-2) : c)).substring(8, 20);
 }
 
 function open(index)
@@ -377,7 +579,6 @@ function open(index)
 
 }
 
-
 function rand(min, max)
 {
   return Math.round(Math.random() * (max - min) + min);
@@ -385,7 +586,7 @@ function rand(min, max)
 
 function init(reset = false)
 {
-  EL.table.classList.remove("finished");
+  EL.table.className = "";
   settings.stats.timestamp = 0;
   let opened = false;
   for(let i = 0, mask = OPEN + FLAG; i < settings.table.length; i++)
@@ -455,20 +656,21 @@ function init(reset = false)
     {
       // elCell.textContent = table[i];
       delete elCell.dataset.type;
-      elCell.classList.remove("opened");
+      elCell.className = "";
     }
     else
     {
-      if (settings.table[i] & OPEN)
+      if (settings.table[i] & OPEN || settings.table[i] & SHOW)
       {
         elCell.classList.add("opened");
         elCell.dataset.type = settings.table[i] & TYPE;
         started = true;
       }
-      else if(settings.table[i] & FLAG)
+      if(settings.table[i] & FLAG)
       {
         elCell.dataset.type = FLAG;
         flags++;
+        started = true;
       }
       if ((settings.table[i] & TYPE) == MINE)
         mines++;
@@ -478,7 +680,6 @@ function init(reset = false)
   // {
   //   settings.stats.mines = flags;
   // }
-console.log(flags, settings.stats.mines, mines, settings.mines);
   if (started)
     start(0);
 
@@ -490,11 +691,27 @@ console.log(flags, settings.stats.mines, mines, settings.mines);
   EL.minesTotal.textContent = settings.mines;
   settings.table = settings.table; //save settings
   start(0);
-  if (isWon())
-    finished(true);
+  const finish = isFinished();
+  if (finish)
+    finished(finish == 1);
 
-  EL.difficulty.textContent = ["Can't loose", "Don't wanna think", "Super easy", "Easy", "Normal", "Medium", "Hard", "Very hard", "I can do this!", "I'll try it anyway", "Impossible", "Gotta buy a lottery"][Math.min(~~(difficulty() * 2 / 11), 11)];// + " [" + ~~(difficulty()) + "%]";
+  EL.difficulty.textContent = ["Can't loose", "Don't wanna think", "Super easy", "Easy", "Normal", "Medium", "Hard", "Very hard", "I can do this!", "I'll try it anyway", "Impossible", "Gotta buy a lottery"][Math.min(~~(difficulty() * 3 / 11), 11)];// + " [" + ~~(difficulty()) + "%]";
   EL.difficulty.dataset.value = ~~(difficulty() + 1);
+
+  let empty = [];
+  for(let i = 0; i < settings.table.length; i++)
+  {
+    if (!settings.table[i])
+      empty[empty.length] = i;
+  }
+  if (!started && difficulty() > 21 && settings.startOpen)
+  {
+    empty = empty[~~(rand(0, empty.length-1))];
+    if (empty !== undefined)
+      open(empty);
+
+  }
+  pause(settings.stats.pauseTime);
 }// init();
 
 function difficulty()
@@ -520,12 +737,17 @@ function getIndexOffset(index, offsetX, offsetY, width = settings.width, height 
 
 function encode(val)
 {
-  const r = [];
-  for(let i = 0; i < val.length; i+=5)
+  const r = [],
+        bits = Math.log2(FLAG) + 1,
+        max = ~~(32 / bits);
+
+  for(let i = 0; i < val.length; i+=max)
   {
     let v = 0;
-    for(let n = 0; n < 5; n++) //combine 4 6-bit numbers into 1 32-bit
-      v |= ~~val[i + n] << ((4-n)*6);
+    for(let n = 0; n < max; n++) //combine 4 6-bit numbers into 1 32-bit
+    {
+      v |= ~~val[i + n] << ((max-1-n)*bits);
+    }
 
     r[r.length] = v;
   }
@@ -535,14 +757,17 @@ function encode(val)
 function decode(val)
 {
   val = ("" + val).split(",").map(a => ~~a);
-  let r = [];
+  let r = [],
+      bits = Math.log2(FLAG) + 1,
+      max = ~~(32 / bits),
+      mask = (FLAG << 1) - 1;
+
   for(let i = 0; i < val.length; i++)
   {
-    let id = (i+1) * 5;
-    for(let n = 0; n < 5; n++)
-      r[id-n-1] = val[i] >> n*6 & 63;
+    let id = (i+1) * max;
+    for(let n = 0; n < max; n++)
+      r[id-n-1] = val[i] >> n*bits & mask;
   }
   return r;
 }
-
 }

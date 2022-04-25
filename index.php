@@ -6,6 +6,7 @@
   <title>Mine'er'ish</title>
   <link rel="stylesheet" media="screen" href="css/font.css?<?=filemtime("css/font.css")?>">
   <link rel="stylesheet" media="screen" href="css/main.css?<?=filemtime("css/main.css")?>">
+  <style id="shake"></style>
 </head>
 
 <body>
@@ -15,18 +16,23 @@
         <span>
           <span>Size:</span>
           <span>
-            <input id="width" type="number" /> x <input id="height" type="number" />
+            <select id="width"></select> x <select id="height"></select>
+            <!-- <input id="width" type="number" value="10"/> x <input id="height" type="number" value="10"/> -->
           </span>
         </span>
         <span>
           <span>Mines:</span>
           <span>
-            <input id="mines" type="number" />
+            <input id="mines" type="number" value="20"/>
           </span>
         </span>
       </span>
       <span>
+        <span><button id="pause">Pause</button></span>
         <span><button id="reset">New game</button></span>
+      </span>
+      <span>
+        <label title="Primary action"><input id="click" type="checkbox"><span>Open</span></label>
       </span>
       <span>
         <span id="difficulty"></span>
@@ -35,13 +41,13 @@
     <div class="stats">
       <div>
         <span>
-          <span>Time:</span><span id="clock"><span></span><span></span><span></span></span>
+          <span>Time:</span><span id="clock"><span>00</span><span>00</span><span>00</span><span>000</span></span>
         </span>
         <span>
-          <span>Mines:</span><span><span id="minesFound"></span>/<span id="minesTotal"></span>(<span id="minesPercent"></span>%)</span>
+          <span>Mines:</span><span><span id="minesFound">0</span>/<span id="minesTotal">0</span>(<span id="minesPercent">0</span>%)</span>
         </span>
         <span>
-          <span>Steps:</span><span id="steps"></span></span>
+          <span>Steps:</span><span id="steps">0</span></span>
         </span>
       </div>
     </div>
