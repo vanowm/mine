@@ -16,6 +16,16 @@ body
   --cols: 0;
   --zoom: 2.5em;
   --iconSize: 80%;
+
+  --border-color-dark: black;
+  --border-color-light: rgba(192, 192, 192, 0.5);
+  --border-top: calc(var(--zoom) / 20);
+  --border-right: var(--border-top);
+  --border-left: calc(var(--zoom) / 20 * -1);
+  --border-bottom: var(--border-left);
+  --border-size-dark: calc(var(--zoom) / 15);
+  --border-size-light: calc(var(--zoom) / 5);
+
 }
 
 .control
@@ -55,7 +65,7 @@ body
   display: inline-grid;
   grid-template-columns: repeat(var(--cols), 1fr);
   text-align: center;
-/* margin: 1em; */}
+/* margin: 1em; */margin: calc(var(--zoom) / 30) /* allow cell border through */;}
 
 #table > *
 {
@@ -73,9 +83,9 @@ body
   font-weight: bold;
 }
 
-body:not(.pause):not(.drag) #table:not(.finished) > *:not(.opened):hover
+body:not(.pause):not(.drag) #table:not(.finished) > *:not(.shown):hover
 {
-  box-shadow: 0 0 calc(var(--zoom) / 5) 0 black inset, 0 0 calc(var(--zoom) / 5) 0 outset;
+  box-shadow: 0 0 calc(var(--zoom) / 5) 0 black inset, 0 0 calc(var(--zoom) / 5) 0;
 }
 
 #table > *::before
@@ -115,11 +125,32 @@ body:not(.pause) #table > *[data-type="9"]::before
   background-image: url(images/mine.svg);
 }
 
-body:not(.pause) #table.finished.won > *.shown
+body:not(.pause) #table.finished > *[data-type="9"]:not(.flag).top
+{
+  --border-top-color-dark: var(--border-color-dark);
+  --border-top-color-light: var(--border-color-light)
+}
+body:not(.pause) #table.finished > *[data-type="9"]:not(.flag).right
+{
+  --border-right-color-dark: var(--border-color-dark);
+  --border-right-color-light: var(--border-color-light)
+}
+body:not(.pause) #table.finished > *[data-type="9"]:not(.flag).bottom
+{
+  --border-bottom-color-dark: var(--border-color-dark);
+  --border-bottom-color-light: var(--border-color-light)
+}
+body:not(.pause) #table.finished > *[data-type="9"]:not(.flag).left
+{
+  --border-left-color-dark: var(--border-color-dark);
+  --border-left-color-light: var(--border-color-light)
+}
+
+body:not(.pause) #table.finished.won > *.opened
 {
   background-color: rgba(219, 255, 244, 0.5);
 }
-body:not(.pause) #table.finished:not(.won) > *.shown
+body:not(.pause) #table.finished:not(.won) > *.opened
 {
   background-color: hsla(0, 100%, 93%, 0.5);
 }
@@ -128,21 +159,39 @@ body:not(.pause) #table > *[data-type]
   background-color: rgba(189, 212, 255, 0.5);
 }
 
+body:not(.pause) #table.finished > *[data-type="9"].shown.last:not(.flag).last::before
+{
+  animation: shake 0.5s linear infinite;
+}
+
+body:not(.pause) #table.finished > *[data-type="9"]:not(.flag)
+{
+  background-color: rgb(252, 118, 118);
+  box-shadow:
+      /* top */
+      0 var(--border-top) var(--border-size-dark) 0 var(--border-top-color-dark) inset,
+      /* 0 var(--border-bottom) var(--border-size-light) 0 var(--border-top-color-light) inset, */
+      /* right */
+      var(--border-right) 0 var(--border-size-dark)  0 var(--border-right-color-dark) inset
+      /* var(--border-left) 0 var(--border-size-light) 0 var(--border-right-color-light) inset, */
+      /* bottom */
+      /* 0 var(--border-bottom) var(--border-size-dark) 0 var(--border-bottom-color-dark) inset,
+      /* 0 var(--border-top) var(--border-size-light) 0 var(--border-bottom-color-light) inset, */
+      /* left */
+      /* var(--border-left) 0 var(--border-size-dark) 0 var(--border-left-color-dark) inset */
+      /* var(--border-right) 0 var(--border-size-light) 0 var(--border-left-color-light) inset */
+}
+
+
+
 body:not(.pause) #table > *.flag,
 body:not(.pause) #table.finished > *.flag,
 body:not(.pause) #table:not(.finished) > *[data-type="64"]
 {
   background-color: rgb(252, 178, 118);
+  box-shadow: calc(var(--zoom) / 20) calc(var(--zoom) / 20) calc(var(--zoom) / 15) 0 black, calc(var(--zoom) / 20 * -1) calc(var(--zoom) / 20 * -1) calc(var(--zoom) / 5) 0 rgba(192, 192, 192, 0.5)
 }
 
-body:not(.pause) #table.finished > *[data-type="9"].opened.last:not(.flag).last::before
-{
-  animation: shake 0.5s linear infinite;
-}
-body:not(.pause) #table.finished > *[data-type="9"]:not(.flag)
-{
-  background-color: rgb(252, 118, 118);
-}
 
 body:not(.pause) #table > *[data-type="9"].flag,
 body:not(.pause) #table.won > *[data-type="9"]

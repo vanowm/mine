@@ -9,6 +9,7 @@ const EL = new Proxy({},{get(target, prop){return prop in target ? target[prop] 
       FLAG = 64,
       TYPE = OPEN - 1,
       OFFSET = [-1,-1,0,-1,1,-1,1,0,1,1,0,1,-1,1,-1,0], //offset around current coordinate
+      BORDERS = ["top", "right", "bottom", "left"],
       anim = {
         clock: [],
         shake: 0,
@@ -427,8 +428,11 @@ function finished(won)
   for(let i = 0; i < settings.table.length; i++)
   {
     const cell = EL.table.children[i];
-    cell.classList.add("opened");
-    if (!(settings.table[i] & OPEN+FLAG))
+    if (settings.table[i] & OPEN+FLAG)
+    {
+      cell.classList.add("opened");
+    }
+    else
     {
       settings.table[i] |= SHOW;
       cell.classList.add("shown");
@@ -533,14 +537,59 @@ function getTime(time)
   return time > 8553599999 ? "99:59:59.999" : new Date(time).toISOString().replace(/(\d+)T(\d+)/, (a,b,c) => (~~b-1? ("0"+Math.min(((~~b-1)*24+~~c), 99)).substr(-2) : c)).substring(8, 20);
 }
 
+function setBorders(index) //set borders around same type of cells
+{
+  const item = settings.table[index],
+        borders = [],
+        isOpen = ~~!!(item & OPEN),
+        isFlag = ~~!!(item & FLAG),
+        isShow = ~~!!(item & SHOW),
+        value = item & TYPE,
+        neighbors = [
+          getIndexOffset(index, 0, -1), /*top*/
+          getIndexOffset(index, 1, 0), /*right*/
+          getIndexOffset(index, 0, 1), /*bottom*/
+          getIndexOffset(index, -1, 0) /*left*/
+        ];
+// const deb2 = {i:index, v:value};
+// deb2["|" + (item < 0 ? "------" : (isFlag?"f":"-") + (isShow?"s":"-") + (isOpen?"o":"-") + value.toString(2).padStart(Math.log2(TYPE)+1,0))] = item < 0 ? -1 : item;
+// console.log(deb2);
+  for(let i = 0; i < neighbors.length; i++)
+  {
+    const nItem = settings.table[neighbors[i]] === undefined ? -(FLAG << 1) : settings.table[neighbors[i]],
+          nOpen = ~~!!(nItem & OPEN),
+          nFlag = ~~!!(nItem & FLAG),
+          nShow = ~~!!(nItem & SHOW),
+          nValue = nItem & TYPE;
+// const deb = {};
+// deb[["T","R","B","L"][i]] = nItem < 0 ? -1 : nValue;
+// deb["|" + (nItem < 0 ? "------" : (nFlag?"f":"-") + (nShow?"s":"-") + (nOpen?"o":"-") + nValue.toString(2).padStart(Math.log2(TYPE)+1,0))] = nItem < 0 ? -1 : nItem;
+// console.log(Object.assign(deb, {r:""+[
+//         (nValue == MINE && value == MINE && (isOpen + isShow) && (nOpen + nShow)),
+//         (value != MINE && nValue != MINE && (isOpen == nOpen || isShow == nShow)),
+//         (isFlag && isFlag == nFlag),
+
+//         nValue == MINE, value == MINE, (isOpen + isShow), (nOpen + nShow)
+// ]}));
+    borders[i] = !(nItem >= 0 && ((value == MINE && value == nValue && (isOpen + isShow) && (nOpen + nShow)) || (value != MINE && nValue != MINE && (isOpen == nOpen || isShow == nShow)) || (isFlag && isFlag == nFlag)));
+  }
+// console.log(borders)
+  return borders;
+
+}
 function open(index)
 {
   let array = [index];
   while(array.length)
   {
     index = array.pop();
-    EL.table.children[index].dataset.type = settings.table[index] & TYPE;
-    EL.table.children[index].classList.add("opened")
+    const elCell = EL.table.children[index];
+    elCell.dataset.type = settings.table[index] & TYPE;
+    elCell.classList.add("shown");
+    const borders = setBorders(index);
+    for(let b = 0; b < borders.length; b++)
+      elCell.classList.toggle(BORDERS[b], !!borders[b]);
+
     if (!(settings.table[index] & OPEN))
       settings.stats.open++;
 
@@ -571,7 +620,7 @@ function open(index)
           settings.stats.open++;
 
         settings.table[i] |= OPEN;
-        EL.table.children[i].classList.add("opened");
+        EL.table.children[i].classList.add("shown");
       }
   
     }
@@ -662,7 +711,7 @@ function init(reset = false)
     {
       if (settings.table[i] & OPEN || settings.table[i] & SHOW)
       {
-        elCell.classList.add("opened");
+        elCell.classList.add("shown");
         elCell.dataset.type = settings.table[i] & TYPE;
         started = true;
       }
@@ -675,6 +724,10 @@ function init(reset = false)
       if ((settings.table[i] & TYPE) == MINE)
         mines++;
     }
+    const borders = setBorders(i);
+    for(let b = 0; b < borders.length; b++)
+      elCell.classList.toggle(BORDERS[b], !!borders[b]);
+
   }
   // if (flags !== settings.stats.mines)
   // {
