@@ -8,6 +8,8 @@ const EL = new Proxy({},{get(target, prop){return prop in target ? target[prop] 
       SHOW = 32,
       FLAG = 64,
       TYPE = OPEN - 1,
+      WIN = 1,
+      LOOSE = 2,
       OFFSET = [-1,-1,0,-1,1,-1,1,0,1,1,0,1,-1,1,-1,0], //offset around current coordinate
       BORDERS = ["top", "right", "bottom", "left"],
       anim = {
@@ -18,10 +20,11 @@ const EL = new Proxy({},{get(target, prop){return prop in target ? target[prop] 
       {
         width: {default: 10, value: 10, min: 2, max: 300},
         height: {default: 10, value: 10, min: 2, max: 300},
-        mines: {default: 20, value: 20, min: 1, max: 9998},
-        zoom: {default: 2.5, value: 2.5, min: 1, max: 20},
+        mines: {default: 15, value: 15, min: 1, max: 9998},
+        zoom: {default: 5.2, value: 5.2, min: 1, max: 25},
         click: {default: true, value: true},
-        startOpen: {default: true, value: true},
+        autoReveal: {default: 18, value: 18},
+        darkMode: {default: 0, value: 0, min: 0, max: 2},
         table: {default: [], value: []},
         stats: {
           start: 0,
@@ -65,6 +68,9 @@ const EL = new Proxy({},{get(target, prop){return prop in target ? target[prop] 
             return;
 
           target[prop].value = value;
+          if (target[prop].onChange instanceof Function)
+            target[prop].onChange(value);
+
           return this.save(target);
         },
 
@@ -109,8 +115,13 @@ const EL = new Proxy({},{get(target, prop){return prop in target ? target[prop] 
           {
             let val = target[key].value;
             if (key == "table")
+            {
               val = encode(val);
-
+            }
+// for(let i = 0; i < 256; i++)
+// {
+//   console.log(i.toString(16), JSON.stringify(String.fromCharCode(i)))
+// }
             if (val === undefined)
               val = target[key];
 
@@ -132,10 +143,13 @@ const EL = new Proxy({},{get(target, prop){return prop in target ? target[prop] 
         }
       });
 
-let dragScroll = false;
+let dragScroll = false,
+    gameStatus = 0;
+
 settings.init();
 setZoom();
-[...document.querySelectorAll(".control input, .control select")].map(el =>
+setTheme();
+[...document.querySelectorAll(".menu input, .menu select")].map(el =>
 {
   if (el.type == "checkbox")
   {
@@ -161,7 +175,7 @@ setZoom();
     el.max = el.id == "mines" ? settings.width * settings.height - 1 : settings.max[el.id];
 
   }
-  let timer, timerFilter;
+  let timerInput, timerFilter;
   el.addEventListener("input", e => 
   {
     const isCheckbox = el.type == "checkbox",
@@ -190,14 +204,15 @@ setZoom();
         EL.mines.value = max;
       }
     }
-    clearTimeout(timer);
-    timer = setTimeout(() => init(true), isSelect ? 0 : 300);
+    clearTimeout(timerInput);
+    timerInput = setTimeout(() => init(true), isSelect ? 0 : 300);
 
   });
 });
 
 {
-  let scaling = false;
+  let scaling = false,
+      timerZoom;
 
   window.addEventListener("touchstart", e =>
   {
@@ -230,7 +245,7 @@ setZoom();
 
       scaling = dist;
       settings.zoom = zoom;
-      timer = setTimeout(setZoom, 10);
+      timerZoom = setTimeout(setZoom, 10);
     }
 
   },{passive: false});
@@ -260,7 +275,7 @@ setZoom();
       zoom = settings.max.zoom;
 
     settings.zoom = zoom;
-    timer = setTimeout(setZoom, 10);
+    timerZoom = setTimeout(setZoom, 10);
 
   },{passive: false});
 
@@ -270,15 +285,17 @@ setZoom();
 
   let clientX = 0,
       clientY = 0,
-      mouseDown = null;
+      mouseDown = null,
+      timerTimeout;
 
   const onMouseMove = e =>
   {
-    if (e.timeStamp - mouseDown.timeStamp < 100000 /*this can be removed*/
-         && ((dragScroll && e.clientX == clientX && e.clientY == clientY)
-            || (!dragScroll && Math.hypot(e.clientX - clientX, e.clientY - clientY) < 8))) //allow 6px movement
+    if ((dragScroll && e.clientX == clientX && e.clientY == clientY)
+          || (!dragScroll && Math.hypot(e.clientX - clientX, e.clientY - clientY) < 8)) //allow 6px movement
       return;
 
+    clearTimeout(timerTimeout);
+    document.body.classList.add("drag");
     if (!dragScroll)
     {
       // ({clientX, clientY} = e);
@@ -294,6 +311,7 @@ setZoom();
   };
   const onMouseUp = e =>
   {
+    clearTimeout(timerTimeout);
     window.removeEventListener("mouseup", onMouseUp);
     window.removeEventListener("mousemove", onMouseMove);
     document.body.classList.remove("drag");
@@ -309,11 +327,15 @@ setZoom();
 
   EL.table.addEventListener("mousedown", e =>
   {
+    timerTimeout = setTimeout(() =>
+    {
+      document.body.classList.add("drag");
+      dragScroll = true;
+    }, 3000);
     mouseDown = e;
     dragScroll = false;
     ({clientX, clientY} = e);
     e.preventDefault();
-    document.body.classList.add("drag");
     window.addEventListener("mouseup", onMouseUp);
     window.addEventListener("mousemove", onMouseMove);
   });
@@ -387,13 +409,16 @@ function onClick(e)
   settings.stats.steps[settings.stats.steps.length] = (index << 1) | !leftClick; //set bit1 = flag
 
   if (!settings.stats.start)
-    start();
+    timer();
 
   if (leftClick)
   {
     open(index);
     if ((val & TYPE) == MINE)
+    {
+      settings.stats.time = new Date().getTime() - settings.stats.start;
       return finished();
+    }
   }
   else
   {
@@ -406,25 +431,31 @@ function onClick(e)
     delete e.target.dataset.type;
 
   if (isWon())
+  {
+    settings.stats.time = new Date().getTime() - settings.stats.start;
     finished(true);
-
+  }
   settings.save;
   //  e.target.textContent = val;
 }
 
 function finished(won)
 {
+  settings.stats.start = 0;
   EL.table.classList.add("finished");
   if (won)
   {
     console.log("you win!");
     EL.table.classList.add("won");
+    gameStatus = WIN;
 
   }
   else
   {
     console.log("game over");
+    gameStatus = LOOSE
   }
+  let steps = settings.stats.steps.map(a => a >> 1);
   for(let i = 0; i < settings.table.length; i++)
   {
     const cell = EL.table.children[i];
@@ -442,9 +473,19 @@ function finished(won)
     if (settings.table[i] & FLAG)
       cell.classList.add("flag");
 
+    const pos = steps.reduce((a, v, n) =>
+    {
+      if (v == i)
+        a[a.length] = n + 1;
+
+        return a;
+    }, []);
+    if (pos.length)
+    {
+      cell.dataset.step = pos;
+    }
   }
   EL.table.children[settings.stats.steps[settings.stats.steps.length - 1]>>1].classList.add("last");
-  settings.stats.start = 0;
   settings.save; //save settings
 }
 
@@ -482,10 +523,12 @@ function isWon()
   return true;
 }
 
-function start(timestamp)
+function timer(timestamp)
 {
   if (timestamp === undefined)
+  {
     settings.stats.start = new Date().getTime();
+  }
 
   if (timestamp - settings.stats.timestamp > 15)
   {
@@ -508,20 +551,15 @@ function start(timestamp)
     EL.steps.textContent = settings.stats.steps.length;
     EL.clock.classList.toggle("blink", time[3] > 500);
   }
-  if (!anim.shake || timestamp - anim.shake > 1000)
+  if (gameStatus == 2 && (!anim.shake || timestamp - anim.shake > 1000))
   {
     anim.shake = timestamp;
-    let frames = "";
-    for(let i = 0; i < 101; i += 10)
+    for(let i = 0; i < 11; i++)
     {
-      frames += `${i}%{transform:translate(${~~(Math.random() * 10 -5)/60}em,${~~(Math.random() * 10 -5)/60}em) rotate(${~~(Math.random() * 10 -5)}deg);}`;
+      document.body.style.setProperty("--shakeX" + i, ~~(Math.random() * 10 -5)/60 + "em");
+      document.body.style.setProperty("--shakeY" + i, ~~(Math.random() * 10 -5)/60 + "em");
+      document.body.style.setProperty("--shakeR" + i, ~~(Math.random() * 10 -5) + "deg");
     }
-    EL.shake.textContent = `@keyframes shake{${frames}}`;
-    
-    // document.body.style.setProperty("--shakeX", ~~(Math.random() * 10 -5) + "px" );
-    // document.body.style.setProperty("--shakeY", ~~(Math.random() * 10 -5) + "px" );
-    // document.body.style.setProperty("--shakeR", ~~(Math.random() * 4 -2) + "deg" );
-
   }
   // if (timestamp - anim.timers.blink > 1000)
   // {
@@ -529,7 +567,7 @@ function start(timestamp)
   //   anim.blink = settings.stats.start && !anim.blink;
   //   EL.clock.classList.toggle("blink", anim.blink);
   // }
-  requestAnimationFrame(start);
+  requestAnimationFrame(timer);
 }
 
 function getTime(time)
@@ -541,9 +579,9 @@ function setBorders(index) //set borders around same type of cells
 {
   const item = settings.table[index],
         borders = [],
-        isOpen = ~~!!(item & OPEN),
-        isFlag = ~~!!(item & FLAG),
-        isShow = ~~!!(item & SHOW),
+        isOpen = ~~Boolean(item & OPEN),
+        isFlag = ~~Boolean(item & FLAG),
+        isShow = ~~Boolean(item & SHOW),
         value = item & TYPE,
         neighbors = [
           getIndexOffset(index, 0, -1), /*top*/
@@ -557,9 +595,9 @@ function setBorders(index) //set borders around same type of cells
   for(let i = 0; i < neighbors.length; i++)
   {
     const nItem = settings.table[neighbors[i]] === undefined ? -(FLAG << 1) : settings.table[neighbors[i]],
-          nOpen = ~~!!(nItem & OPEN),
-          nFlag = ~~!!(nItem & FLAG),
-          nShow = ~~!!(nItem & SHOW),
+          nOpen = ~~Boolean(nItem & OPEN),
+          nFlag = ~~Boolean(nItem & FLAG),
+          nShow = ~~Boolean(nItem & SHOW),
           nValue = nItem & TYPE;
 // const deb = {};
 // deb[["T","R","B","L"][i]] = nItem < 0 ? -1 : nValue;
@@ -588,7 +626,7 @@ function open(index)
     elCell.classList.add("shown");
     const borders = setBorders(index);
     for(let b = 0; b < borders.length; b++)
-      elCell.classList.toggle(BORDERS[b], !!borders[b]);
+      elCell.classList.toggle(BORDERS[b], Boolean(borders[b]));
 
     if (!(settings.table[index] & OPEN))
       settings.stats.open++;
@@ -635,6 +673,7 @@ function rand(min, max)
 
 function init(reset = false)
 {
+  gameStatus = 0;
   EL.table.className = "";
   settings.stats.timestamp = 0;
   let opened = false;
@@ -704,7 +743,9 @@ function init(reset = false)
     if (reset)
     {
       // elCell.textContent = table[i];
-      delete elCell.dataset.type;
+      for(let i in elCell.dataset)
+        delete elCell.dataset[i];
+
       elCell.className = "";
     }
     else
@@ -726,16 +767,13 @@ function init(reset = false)
     }
     const borders = setBorders(i);
     for(let b = 0; b < borders.length; b++)
-      elCell.classList.toggle(BORDERS[b], !!borders[b]);
+      elCell.classList.toggle(BORDERS[b], Boolean(borders[b]));
 
-  }
+  }//for
   // if (flags !== settings.stats.mines)
   // {
   //   settings.stats.mines = flags;
   // }
-  if (started)
-    start(0);
-
   document.body.style.setProperty("--cols", settings.width);
   document.body.style.setProperty("--rows", settings.height);
   // for(let i = 0; i < settings.height; i++)
@@ -743,7 +781,7 @@ function init(reset = false)
   
   EL.minesTotal.textContent = settings.mines;
   settings.table = settings.table; //save settings
-  start(0);
+  timer(0);
   const finish = isFinished();
   if (finish)
     finished(finish == 1);
@@ -751,14 +789,14 @@ function init(reset = false)
   EL.difficulty.textContent = ["Can't loose", "Don't wanna think", "Super easy", "Easy", "Normal", "Medium", "Hard", "Very hard", "I can do this!", "I'll try it anyway", "Impossible", "Gotta buy a lottery"][Math.min(~~(difficulty() * 3 / 11), 11)];// + " [" + ~~(difficulty()) + "%]";
   EL.difficulty.dataset.value = ~~(difficulty() + 1);
 
-  let empty = [];
-  for(let i = 0; i < settings.table.length; i++)
+  if (!started && difficulty() > settings.autoReveal)
   {
-    if (!settings.table[i])
-      empty[empty.length] = i;
-  }
-  if (!started && difficulty() > 21 && settings.startOpen)
-  {
+    let empty = [];
+    for(let i = 0; i < settings.table.length; i++)
+    {
+      if (!settings.table[i])
+        empty[empty.length] = i;
+    }
     empty = empty[~~(rand(0, empty.length-1))];
     if (empty !== undefined)
       open(empty);
@@ -788,6 +826,31 @@ function getIndexOffset(index, offsetX, offsetY, width = settings.width, height 
   return y * width + x;
 }
 
+
+
+function setTheme(theme)
+{
+  if (theme === undefined)
+    theme = settings.darkMode;
+
+  if (theme == 2)
+    document.documentElement.removeAttribute("theme");
+  else
+    document.documentElement.setAttribute("theme", settings.darkMode ? "dark" : "light");
+
+  settings.darkMode = theme;
+  const style = document.getElementById("dropdownstyle") || document.createElement("style"),
+        s = getComputedStyle(document.querySelector("select")),
+        css = `label.dropdown{${Array.from(s).map(k =>`${k}:${s[k]}`).join(";")}}`;
+
+  style.innerHTML = css;
+  style.id = "dropdownstyle";
+  document.head.insertBefore(style, document.head.querySelector("[rel='stylesheet']"));
+  document.documentElement.style.setProperty("--textColor", getComputedStyle(document.documentElement).color);
+}
+
+
+
 function encode(val)
 {
   const r = [],
@@ -802,14 +865,14 @@ function encode(val)
       v |= ~~val[i + n] << ((max-1-n)*bits);
     }
 
-    r[r.length] = v;
+    r[r.length] = v.toString(36);
   }
-  return r + "";
+  return r.join("\xad");//separate text with "invisible" character
 }
 
 function decode(val)
 {
-  val = ("" + val).split(",").map(a => ~~a);
+  val = val.split("\xad");
   let r = [],
       bits = Math.log2(FLAG) + 1,
       max = ~~(32 / bits),
@@ -819,7 +882,7 @@ function decode(val)
   {
     let id = (i+1) * max;
     for(let n = 0; n < max; n++)
-      r[id-n-1] = val[i] >> n*bits & mask;
+      r[id-n-1] = parseInt(val[i], 36) >> n*bits & mask;
   }
   return r;
 }
