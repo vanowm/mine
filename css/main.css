@@ -48,11 +48,12 @@ body {
   --border-color-dark: black;
   --border-color-light: transparent;
   /* --border-color-light: rgba(192, 192, 192, 0.5); */
-  --border-top: calc(var(--zoom) / 20);
-  --border-right: calc(var(--zoom) / 20 * -1);
+  --border-size: calc(var(--zoom) / 10);
+  --border-top: var(--border-size);
+  --border-right: calc(var(--border-size) * -1);
   --border-left: var(--border-top);
   --border-bottom: var(--border-right);
-  --border-size-dark: calc(var(--zoom) / 20);
+  --border-size-dark: var(--border-size);
   --border-size-light: calc(var(--zoom) / 5);
   --border-spread-dark: calc(var(--border-size-dark) / 2.5 * -1);
   --border-top-color-dark: transparent;
@@ -141,10 +142,11 @@ nav.control {
   justify-content: center;
   align-items: center;
   font-weight: bold;
+  background-repeat: no-repeat;
   z-index: 2;
 }
 
-body:not(.pause):not(.drag) #table:not(.finished) > *:not(.shown):hover {
+body:not(.pause):not(.drag):not(.finished) #table > *:not(.shown):hover {
   box-shadow: 0 0 calc(var(--zoom) / 5) 0 black inset,
     0 0 calc(var(--zoom) / 5) 0;
 }
@@ -183,7 +185,7 @@ body:not(.pause) #table > *[data-type="64"]::before {
 body:not(.pause) #table > *[data-type="9"]::before {
   background-image: url(images/mine.svg);
 }
-
+/* 
 body:not(.pause) #table.finished > *[data-type="9"]:not(.flag).top {
   --border-top-color-dark: var(--border-color-dark);
   --border-top-color-light: var(--border-color-light);
@@ -202,15 +204,13 @@ body:not(.pause) #table.finished > *[data-type="9"]:not(.flag).bottom {
 body:not(.pause) #table.finished > *[data-type="9"]:not(.flag).left {
   --border-left-color-dark: var(--border-color-dark);
   --border-left-color-light: var(--border-color-light);
-}
+} */
 
-body:not(.pause) #table.finished.won > *.opened {
+body:not(.pause).finished #table.won > *.opened {
   background-color: rgba(219, 255, 244, 0.5);
 }
 
-body:not(.pause)
-  #table.finished:not(.won)
-  > *:not([data-type="9"]).shown:not(.opened):not(.flag) {
+body:not(.pause).finished #table:not(.won) > *:not([data-type="9"]).shown:not(.opened):not(.flag) {
   background-color: hsla(0, 100%, 93%, 0.5);
 }
 
@@ -218,30 +218,49 @@ body:not(.pause) #table > *[data-type] {
   background-color: rgba(189, 212, 255, 0.5);
 }
 
-body:not(.pause)
-  #table.finished
+body:not(.pause).finished
+  #table
   > *[data-type="9"].shown.last:not(.flag).last::before {
   animation: shake 0.5s linear infinite;
 }
 
-body:not(.pause) #table.finished > *[data-type="9"]:not(.flag) {
+body:not(.pause).finished #table > *[data-type="9"]:not(.flag) {
   background-color: rgb(252, 118, 118);
   z-index: 1;
-  box-shadow: 0 var(--border-top) var(--border-size-dark)
-      var(--border-spread-dark) var(--border-top-color-dark) inset,
-    var(--border-left) 0 var(--border-size-dark) var(--border-spread-dark)
-      var(--border-left-color-dark) inset;
+}
+body:not(.pause).finished #table > *[data-type="9"]:not(.flag)::before {
+  top: calc(var(--border-size-dark) / 55);
+  left: calc(var(--border-size-dark) / 55);
+}
+body:not(.pause).finished #table > *[data-type="9"]:not(.flag)::before {
 }
 
+
+body:not(.pause).finished #table > *[data-type="9"]:not(.flag).top {
+  background-image: linear-gradient(var(--border-color-dark), transparent);
+  background-size: 100% var(--border-size-dark);
+}
+
+body:not(.pause).finished #table > *[data-type="9"]:not(.flag).left {
+  background-image: linear-gradient(to right, var(--border-color-dark), transparent);
+  background-size: var(--border-size-dark) 100%;
+}
+
+body:not(.pause).finished #table > *[data-type="9"]:not(.flag).top.left {
+  background-image: linear-gradient(to right, var(--border-color-dark), transparent), linear-gradient(var(--border-color-dark), transparent);
+  background-size: var(--border-size-dark) 100%, 100% var(--border-size-dark);
+}
+
+
+
 body:not(.pause) #table > *.flag,
-body:not(.pause) #table.finished > *.flag,
-body:not(.pause) #table:not(.finished) > *[data-type="64"] {
+body:not(.pause).finished #table > *.flag,
+body:not(.pause):not(.finished) #table > *[data-type="64"] {
   z-index: 3;
   background-color: rgb(252, 178, 118);
-  box-shadow: calc(var(--zoom) / 20) calc(var(--zoom) / 20)
-      calc(var(--zoom) / 15) 0 var(--border-color-dark),
-    calc(var(--zoom) / 20 * -1) calc(var(--zoom) / 20 * -1)
-      calc(var(--zoom) / 5) 0 var(--border-color-light);
+  margin: -2px;
+  box-shadow: var(--border-top) var(--border-top)
+      var(--border-size) 0 var(--border-color-dark)
 }
 
 body:not(.pause) #table > *[data-type="9"].flag.opened {
@@ -257,13 +276,24 @@ body:not(.pause) #table > *[data-step]::after {
   text-align: right;
   vertical-align: top;
   line-height: 100%;
-  padding: calc(var(--fontSize) / 30);
+  padding: calc(var(--fontSize) / 100);
   font-size: calc(var(--fontSize) / 3.5);
   overflow: hidden;
   max-width: 92%;
   text-overflow: ellipsis;
+  --textShadow: calc(var(--fontSize) / 170);
+  text-shadow:  0     1px   var(--textShadow) #FFF,
+                1px   0     var(--textShadow) #FFF,
+                0     -1px  var(--textShadow) #FFF,
+                -1px  0     var(--textShadow) #FFF,
+                1px     1px   var(--textShadow) #FFF,
+                -1px   -1px     var(--textShadow) #FFF,
+                1px     -1px  var(--textShadow) #FFF,
+                -1px  1px   var(--textShadow) #FFF;
 }
-
+body:not(.pause) #table > *[data-step][data-type="9"]:not(.flag)::after {
+  top: calc(var(--border-size-dark) / 50);
+}
 @keyframes rotate {
   to {
     transform: rotate(360deg);
@@ -330,17 +360,18 @@ main {
   text-align: center;
 }
 
-#clock > :not(:last-child)::after {
+#clock > [data-time="h"]::after,
+#clock > [data-time="m"]::after {
   content: ":";
 }
 
-#clock > :last-child,
-#clock > :nth-last-child(2)::after {
+#clock > [data-time="s"]::after {
   content: ".";
   font-size: 0.8em;
 }
 
-body:not(.pause) #clock.blink > :not(:nth-last-child(2))::after {
+body:not(.pause):not(.finished) #clock.blink > [data-time="h"]::after,
+body:not(.pause):not(.finished) #clock.blink > [data-time="m"]::after {
   opacity: 0.5;
 }
 
@@ -576,4 +607,11 @@ nav > input:not(:checked) ~ div.menu {
   /* margin-right: 1em; */
   line-height: 2em;
   color: graytext;
+}
+
+
+#tableCanvas {
+  width: calc(100vw - 1.5em);
+  height: 100vh;
+  border: 1px solid red;
 }

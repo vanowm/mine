@@ -22,19 +22,27 @@
     <div class="stats">
       <div>
         <span>
-          <span>Time:</span><span id="clock"><span>00</span><span>00</span><span>00</span><span>000</span></span>
+          <span>Time:</span><span id="clock"><span data-time="d"></span><span data-time="h">00</span><span data-time="m">00</span><span data-time="s">00</span><span data-time="ms">000</span></span>
         </span>
         <span>
           <span>Mines:</span><span><span id="minesFound">0</span>/<span id="minesTotal">0</span>(<span id="minesPercent">0</span>%)</span>
         </span>
         <span>
-          <span>Steps:</span><span id="steps">0</span></span>
+          <span>Steps:</span><span id="steps">0</span><span title="Minimum possible">(<span id="perfect"></span>)</span></span>
         </span>
       </div>
     </div>
     <div class="tableBox">
       <div id="table"></div>
     </div>
+<?php
+if (isset($_GET['c']))
+{
+?>
+    <canvas id="tableCanvas"></canvas>
+<?php
+}
+?>
   </main>
   <header>
     <nav>
@@ -66,7 +74,7 @@
   </header>
   <footer></footer>
   <div class="hidden"></div>
-  <script type="text/javascript" src="main.js?<?=filemtime("main.js")?>"></script>
+  <script type="text/javascript" src="js/main.js?<?=filemtime("js/main.js")?>"></script>
 </body>
 
 </html>
