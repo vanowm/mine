@@ -43,7 +43,7 @@
           <label title="Sound effects"><input id="audio" type="checkbox"><span>Sound</span></label>
         </div>
         <div>
-          <label title="Primary action"><input id="click" type="checkbox"><span>Click = open</span></label>
+          <label title="Primary action"><input id="click" type="checkbox"><span>Primary action = open</span></label>
         </div>
         <div>
           <label title="Monochrome mode"><input id="monochrome" type="checkbox"><span>Monochrome</span></label>
