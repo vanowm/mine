@@ -1,0 +1,5 @@
+RewriteEngine On 
+
+#RewriteBase /
+
+RewriteRule ^(css/images/.*)$ svg.php?$1 [L]
