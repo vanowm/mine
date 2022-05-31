@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=0">
   <title>Mine'er'ish</title>
   <link rel="stylesheet" media="screen" href="<?=getfile("css/font.css")?>">
-  <link rel="stylesheet" media="screen" href="<?=getfile("css/main.css")?>">
+  <link rel="stylesheet" media="screen" href="<?=getfile("css/mine.css")?>">
   <script type="text/javascript">
     window.mineTemp = {
       audio: ["<?=getfile("audio/dig.mp3")?>",
@@ -109,7 +109,7 @@ if (isset($_GET['c']))
     <div id="imgFlag"></div>
     <div id="imgMine"></div>
   </div>
-  <script type="text/javascript" src="<?=getfile("js/main.js")?>"></script>
+  <script type="text/javascript" src="<?=getfile("js/mine.js")?>"></script>
 </body>
 
 </html>
