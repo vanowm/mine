@@ -1,4 +1,5 @@
 // jshint -W082,-W014, -W083
+
 {
   "use strict";
   const EL = new Proxy(
@@ -47,6 +48,14 @@
         TYPE = OPEN - 1,
         WIN = 1,
         LOOSE = 2,
+        STATE_STOPPED = 0,
+        STATE_STARTED = 1,
+        STATE_PAUSED = 2,
+        STATS_RESULT = 0, /* flags saved in steps, bit 1 = flag */
+        STATS_TIME = 1,
+        STATS_MINES = 2,
+        STATS_STEPS = 3,
+        STATS_PERFECT = 4,
         OFFSET = [-1,-1,0,-1,1,-1,1,0,1,1,0,1,-1,1,-1,0], //offset around current coordinate
         BORDERS = ["top", "right", "bottom", "left"],
         anim = {
@@ -56,22 +65,45 @@
           shakeEl: document.body,
           shakeFrame: 50,
           index: -1,
+          explode:
+          {
+            el: EL['.tableBox'],
+            shake: 6, //intensity
+            timer: 0,
+            duration: 500, //duration
+          },
         },
-
         tableBox = EL.table.parentNode.parentNode.parentNode,
-        settings = new Proxy(
+        presets = {/* [ width, height, mines ] */
+          "Can't loose": [9,9,2],
+          "Don't wanna think": [9,9,5],
+          "Super easy": [9,9,8],
+          "Easy": [16,16,29],
+          "Normal": [16,16,38],
+          "Medium": [30,16,88],
+          "Hard": [30,16,106],
+          "Very hard": [30,30,231],
+          "I can do this!": [30,30,264],
+          "I'll try it anyway": [30,30,297],
+          "Impossible": [30,30,330],
+          "Gotta buy a lottery": [30,30,363],
+        },
+        difficultyCheat = 18,
+        SETTINGS = new Proxy(
         {
-          width: {default: 10, value: 10, min: 2, max: 300},
-          height: {default: 10, value: 10, min: 2, max: 300},
-          mines: {default: 15, value: 15, min: 1, max: 9998},
-          zoom: {default: 5, value: 5, min: 1, max: 30},
-          click: {default: true, value: true},
-          openFirst: {default: 18, value: 18}, //pre-open empty section before the game if difficulty less than this
+          width: {default: 16, value: 16, min: 2, max: 100, resetBoard: true},
+          height: {default: 16, value: 16, min: 2, max: 100, resetBoard: true},
+          mines: {default: 38, value: 38, min: 1, max: 9998, resetBoard: true},
+          zoom: {default: 12, value: 12, min: 1, max: 70},
+          click: {default: 0, value: 0, min: 0, max: 1, map:["Open", "Flag"]},
+          openFirst: {default: false, value: false}, //pre-open empty section before the game if difficulty less than this
           darkMode: {default: 0, value: 0, min: 0, max: 2},
           table: {default: [], value: []},
-          animation: {default: 6, value: 6, min: 0, max: 10, onChange: val => animation({animation:val}), map:["None"]},
+          animation: {default: 10, value: 10, min: 0, max: 20, onChange: val => animations.steps(val), map:["None"]},
           monochrome: {default: false, value: false},
           audio: {default: true, value: true},
+          showSteps: {default: true, value: true},
+          flagRequire: {default: false, value: false, onChange: val => !gameStatus && showDigits(EL.perfect, perfect.val)},
           stats: {
             start: 0,
             started: 0,
@@ -81,7 +113,7 @@
             open: 0,
             pauseTime: 0,
             pauseStart: 0,
-            steps: [] //list of indexes, bit1 = flag
+            steps: [], //list of indexes, bit1 = flag
           }
         },
         {
@@ -93,19 +125,24 @@
             if (prop == "save")
               return () => this.save(target);
             
-            if (prop == "reset")
-              return () => this.reset(target);
+            if (prop == "clear")
+              return () => this.clear(target);
 
-              if (prop == "toJSON")
-              {
-                const ret = {};
-                for(let i in target)
-                  ret[i] = target[i].value === undefined ? target[i] : target[i].value;
+            if (prop == "presets")
+            {
+              return [target.width.value, target.height.value, target.mines.value];
+            }
+            if (prop == "toJSON")
+            {
+              const ret = {};
+              for(let i in target)
+                ret[i] = target[i].value === undefined ? target[i] : target[i].value;
+
+              return () => ret;
+            }
   
-                return () => ret;
-              }
-  
-            if (["min", "max", "default", "map"].includes(prop))
+            if (["min", "max", "default", "map", "resetBoard"].includes(prop))
+            {
               return Object.keys(target).reduce((obj, key) => 
               {
                 if (key == "mines" && prop == "max")
@@ -115,7 +152,7 @@
                 obj[key] = target[key][prop];
                 return obj;
               }, {});
-  
+            }
             return target[prop] && (target[prop].value === undefined ? target[prop] : target[prop].value);
           }, //get()
   
@@ -176,7 +213,7 @@
             return JSON.parse(localStorage.getItem("mineSettings")) || {};
           },
   
-          reset(target)
+          clear(target)
           {
             localStorage.removeItem("mineSettings");
             this.init(target);
@@ -214,130 +251,394 @@
             return res ? value : undefined;
           }
         }), //settings
-        // animation = (() =>
-        // {
-        //   const array = [];
-        //   let timer = 0,
-        //       prevCell = document.createElement("div"),
-        //       perf = 0,
-        //       fps = [0];
-      
-        //   const loop = timestamp =>
-        //   {
-        //     requestAnimationFrame(loop);
-        //     if (timestamp - timer < 30)
-        //       return;
-            
-        //     for (let i = 0; i < 6; i++)
-        //     {
-        //       if (!array.length)
-        //       {
-        //         prevCell.classList.remove("active");
-        //         return;
-        //       }
-        //       timer = timestamp;
-        //       const [elCell, type] = array.shift();
-        //       elCell.dataset.type = type;
-        //       elCell.classList.add("shown");
-        //       prevCell.classList.remove("active");
-        //       prevCell = elCell;
-        //       prevCell.classList.add("active");
-        //     }
-        //   };
-        //   loop();
-        //   return (el, type) =>
-        //   {
-        //     if (el === undefined)
-        //       return (array.length = 0);
 
-        //     array[array.length] = [el, type];
-        //   };
-        // })(); //animation()
-        animation = (() =>
+        STATS = new Proxy({},
         {
-          //using worker so the animation continues in the background
-          const worker = new Worker(URL.createObjectURL(new Blob(["let settings = {animation:" + settings.animation + "};(" + (() =>
+          get(target, prop, proxy)
           {
-            const array = [];
-            this.addEventListener("message", e =>
+            if (target[prop] === undefined)
             {
-              if (e.data === undefined)
+              const {value, get} = Object.getOwnPropertyDescriptor(this, prop)||{};
+              if ((get||value) instanceof Function)
               {
-                this.postMessage({array, last:true});
-                return (array.length = 0);
+                if (get)
+                  return get.call({handler: this, target});
+                else
+                  return (args) => value.call(this, target, args);
+
               }
-              const data = e.data instanceof Object ? e.data : {index: e.data};
+              const stats = this._stats[[SETTINGS.width,SETTINGS.height,SETTINGS.mines]];
+              if (stats && stats[prop] !== undefined)
+                return stats[prop];
+
+              if ((prop.constructor !== Symbol) && (""+prop).match(/[0-9]+,[0-9]+,[0-9]+/))
+                target[prop] = {};
+            }
+            return target[prop];
+          },
+
+          set(target, prop, value, proxy)
+          {
+            target[prop] = value;
+          },
+
+          deleteProperty(target, prop)
+          {
+            delete target[prop];
+          },
+
+          init(target, data)
+          {
+            if (data === undefined)
+              data = this.load(target);
+  
+            for(let i in data)
+            {
+              let value = data[i];
+
+              if (value !== undefined)
+                target[i] = value;
+            }
+            this.get(target, "stats");
+            return target;
+          }, //init()
+
+          load(target)
+          {
+            return JSON.parse(localStorage.getItem("mineStats")) || {};
+          },
+  
+          clear(target)
+          {
+            localStorage.removeItem("mineStats");
+            this.init(target);
+          },
+
+          save(target)
+          {
+            this.get(target, "stats");
+            return localStorage.setItem("mineStats",  JSON.stringify(Object.keys(target).reduce((ret, key) =>
+            {
+              ret[key] = target[key];
+              return ret;
+            }, {})));
+          }, //save()
+
+          show(target, obj)
+          {
+            if (obj === undefined)
+              obj = this._stats[[SETTINGS.width, SETTINGS.height, SETTINGS.mines]] || {};
+
+            const isAll = obj === this._stats.all,
+                  pref = "stats_" + (isAll ? "all_" : ""),
+                  boardSizeText = ["x", "@", " mines"]
+
+            for(let i in this._stats.all)
+            {
+              const el = EL[pref + i];
+              if (!el) continue;
+              let val = ~~obj[i];
+              if (["time", "best", "worst"].includes(i))
+              {
+                showClock(el, val, [], true);
+                el.dataset.size = obj && obj[i+"Size"] || "";
+                if (el.dataset.size)
+                {
+                  el.dataset.size = el.dataset.size.split(",").reduce((ret, val, i) => ret += val + boardSizeText[i], "");
+                  el.parentNode.lastElementChild.textContent = el.dataset.size ? "(" + el.dataset.size + ")" : "";
+                }
+                continue;
+              }
+              showDigits(el, val);
+            }
+            let val = Math.round(obj.wins * 100 / obj.games) || 0;
+            EL[pref + "wins"].dataset.percent = val;
+            EL[pref + "wins"].parentNode.lastElementChild.textContent = "(" + val + "%" + ")";
+            val = Math.round(obj.loses * 100 / obj.games) || 0;
+            EL[pref + "loses"].dataset.percent = val;
+            EL[pref + "loses"].parentNode.lastElementChild.textContent = "(" + val + "%" + ")";
+            val = Math.round(obj.perfect * 100 / obj.wins) || 0;
+            EL[pref + "perfect"].dataset.percent = val;
+            EL[pref + "perfect"].parentNode.lastElementChild.textContent = "(" + val + "%" + ")";
+            val = Math.round(obj.flags * 100 / obj.steps) || 0;
+            EL[pref + "flags"].dataset.percent = val;
+            EL[pref + "flags"].parentNode.lastElementChild.textContent = "(" + val + "%" + ")";
+            val = Math.round(obj.clicked * 100 / obj.steps) || 0;
+            EL[pref + "clicked"].dataset.percent = val;
+            EL[pref + "clicked"].parentNode.lastElementChild.textContent = "(" + val + "%" + ")";
+            if (!isAll)
+            {
+              val = Math.round(obj.games * 100 / this._stats.all.games) || 0;
+              EL[pref + "games"].dataset.percent = val;
+              EL[pref + "games"].parentNode.lastElementChild.textContent = "(" + val + "%" + ")";
+            }
+            if (!isAll)
+              this.show(target, this._stats.all);
+          },
+          _stats: {},
+          get stats()
+          {
+            const {handler, target} = this,
+                  _default = {
+                    games: 0,
+                    wins: 0,
+                    loses: 0,
+                    steps: 0,
+                    clicked: 0,
+                    flags: 0,
+                    best: 0,
+                    worst: 0,
+                    perfect: 0,
+                    time: 0,
+                    timeSize: "",
+                    bestSize: "",
+                    worstSize: ""
+                  },
+                  stats = {
+                    all: Object.assign({}, _default),
+                  };
+
+            // handler.get(target, [SETTINGS.width, SETTINGS.height, SETTINGS.mine]);
+            for(let size in target)
+            {
+              stats[size] = Object.assign({}, _default);
+              let list = target[size],
+                  data = stats[size];
+
+              for(let date in list)
+              {
+                data.games++;
+                const flagsSet = {},
+                      game = list[date];
+
+                data.time += game[STATS_TIME];
+
+                for(let i = 0, steps = game[STATS_STEPS]; i < steps.length; i++)
+                {
+                  const index = steps[i] >> 1,
+                        isFlag = steps[i] & 1;
+
+                  if (isFlag)
+                    data.flags += (flagsSet[index] === undefined) ? 1 : -1;
+                  else
+                    data.clicked++;
+
+                  flagsSet[index] = 1;
+
+                }
+                if (game[STATS_RESULT])
+                {
+                  data.wins++;
+                  if (game[STATS_PERFECT] == game[STATS_STEPS].length)
+                    data.perfect++;
+
+                  if (!data.best || data.best > game[STATS_TIME])
+                    data.best = game[STATS_TIME];
+    
+                  if (game[STATS_TIME] && data.worst < game[STATS_TIME])
+                    data.worst = game[STATS_TIME];
+                }
+                else
+                  data.loses++;
+
+                data.steps += game[STATS_STEPS].length;
+              }
               for(let i in data)
               {
-                switch(i)
-                {
-                  case "index":
-                    array[array.length] = data[i];
-                    break;
-                  case "animation":
-                    settings.animation = data[i];
-                    break;
-                }
-              }
-            });
-            let timer = 0,
-                prevRet;
-          
-            const loop = timestamp =>
-            {
-              const speed = settings.animation;
-              requestAnimationFrame(loop);
-              if (speed && timestamp - timer < 10-speed)
-                return;
+                if (i == "best" || i == "worst")
+                  continue;
 
-              const ret = {array: [], last: false};
-              for (let i = 0, steps = speed ? speed : array.length; i < steps; i++)
+                stats.all[i] += data[i];
+              }
+              if (data.best && (!stats.all.best || stats.all.best > data.best))
               {
-                if (!array.length)
-                  break;
-          
-                ret.array[ret.array.length] = array.shift();
+                stats.all.best = data.best;
+                stats.all.bestSize = size;
               }
-              timer = timestamp;
-              if (prevRet === ""+ret.array)
-                return;
-          
-              this.postMessage(ret);
-              prevRet = "" + ret.array;
-            };
-            loop();
-          }).toString() + ")()"], { type: "text/javascript" })));
-          let prevCell = document.createElement("div");
-          worker.addEventListener("message", e =>
-          {
-            if (!settings.stats.started)
-              return;
-
-            const {array, last} = e.data;
-            for(let i = 0; i < array.length; i++)
-            {
-              const elCell = showCell(array[i]);
-              prevCell.classList.remove("active");
-              prevCell = elCell;
-              prevCell.classList.add("active");
+              if (data.worst && stats.all.worst < data.worst)
+              {
+                stats.all.worst = data.worst;
+                stats.all.worstSize = size;
+              }
             }
-            if (!array.length || last)
-              prevCell.classList.remove("active");
-          });
-          return (data) =>
-          {
-            worker.postMessage(data);
-          };
+            handler._stats = stats;
+            return handler._stats;
+          },
 
-        })(), //animation
+          list(target, value = [SETTINGS.width,SETTINGS.height,SETTINGS.mines])
+          {
+            return this.get(target, value);
+          },
+
+        }),//stats
+
+        animations = (()=>
+        {
+          const list = new Map();
+          class Animation
+          {
+            constructor(opt = {})
+            {
+              let info = list.get(this) || {
+                          id: list.size,
+                          date: new Date()
+                        };
+
+              list.set(this, info);
+              this.worker =  new Worker(URL.createObjectURL(new Blob(["const opts = {};(" + (() =>
+              {
+                const array = [];
+                let status = 0;
+
+                const commands = {
+                  start: () => status = 1,
+                  stop: (() =>
+                  {
+                    status = 0;
+                    this.postMessage({array, last: true});
+                    return (array.length = 0);
+                  }).bind(this),
+                  pause: () => status = 2,
+                };
+                this.addEventListener("message", e =>
+                {
+                  const data = e.data;
+                  for(let i in data)
+                  {
+                    switch(i)
+                    {
+                      case "index":
+                        array[array.length] = data[i];
+                        break;
+                      case "opt":
+                        for(let o in data[i])
+                          opts[o] = data[i][o];
+                        break;
+                      case "command":
+                        if (commands[data[i]] instanceof Function)
+                          commands[data[i]](data.args);
+                        break;
+                    }
+                  }
+                });
+                let timer = 0,
+                    prevRet = ""+array;
+              
+                const loop = timestamp =>
+                {
+                  const {speed, steps, delay} = opts;
+                  requestAnimationFrame(loop);
+                  if (status != 1 || (steps && timestamp - timer < speed-steps))
+                    return;
+
+                  if (timestamp && !steps)
+                    return commands.stop();
+
+                  if (delay && !timer)
+                  {
+                    timer = timestamp + delay - speed - steps;
+                    return;
+                  }
+                  const ret = {array: [], last: false};
+                  for (let i = 0, max = Math.min(steps, array.length); i < max; i++)
+                  {
+                    if (!array.length)
+                      break;
+              
+                    ret.array[ret.array.length] = array.shift();
+                  }
+                  timer = timestamp;
+                  if (prevRet === ""+ret.array)
+                    return;
+
+                  this.postMessage(ret);
+                  prevRet = "" + ret.array;
+                };
+                loop();
+              }).toString() + ")()"], { type: "text/javascript" })));
+              let prevCell = document.createElement("div");
+              this.worker.addEventListener("message", e =>
+              {
+                info.date = new Date();
+                this.list.set(this, info);
+                if (!SETTINGS.stats.started)
+                  return;
+            
+                const {array, last} = e.data;
+                for(let i = 0; i < array.length; i++)
+                {
+                  const elCell = showCell(array[i]);
+                  elCell.classList.add("active");
+                  prevCell.classList.remove("active");
+                  prevCell = elCell;
+                }
+                if (!array.length || last)
+                {
+                  prevCell.classList.remove("active");
+                  this.worker.status = 0;
+                  this.list.delete(this);
+                  this.worker.terminate();
+                }
+              });
+              this.worker.status = 1;
+              this.steps(opt.animation === undefined ? SETTINGS.animation : opt.animation);
+              this.speed(30);
+              if (opt.start)
+                this.start();
+            }
+            start()
+            {
+              this.worker.postMessage({command:"start"});
+            }
+            pause()
+            {
+              this.worker.postMessage({command:"pause"});
+            }
+            stop()
+            {
+              this.worker.postMessage({command:"stop"});
+            }
+            add(data)
+            {
+              this.worker.postMessage({index: data});
+            }
+            speed(data)
+            {
+              this.worker.postMessage({opt: {speed: data}});
+            }
+            delay(data)
+            {
+              this.worker.postMessage({opt: {delay: data}});
+            }
+            steps(data)
+            {
+              this.worker.postMessage({opt: {steps: data}});
+            }
+            get status(){ return this.worker.status;}
+            get list() {return list;}
+          }//class Animation
+
+          return {
+            new: (opt) => new Animation(opt),
+            stop: () =>
+            {
+              list.forEach((info, anim) => anim.stop());
+            },
+            steps: (data) =>
+            {
+              list.forEach((info, anim) => anim.steps(data));
+            },
+            list
+          };
+        })(), //animations
+
         audio = (()=>
         {
           const list = window.mineTemp.audio;
           let prev;
           return (id) =>
           {
-            console.log(id);
-            if (!settings.audio || !list[id])
+            if (!SETTINGS.audio || !list[id])
               return;
 
             prev && prev.pause();
@@ -351,15 +652,22 @@
       dragScroll = false,
       gameStatus = 0,
       board,
-      perfect = 0;
+      perfect = [0,0];
 
-  settings.init();
+  Object.defineProperty(perfect, "val",
+  {
+    get() {return this[~~SETTINGS.flagRequire];}
+  });
+  SETTINGS.init();
+  STATS.init();
   setZoom();
   setTheme();
   setOptions();
+
+  init(!SETTINGS.table.length);
   EL.resetSettings.addEventListener("click", e =>
   {
-    settings.reset();
+    SETTINGS.clear();
     setOptions();
     setZoom();
     init(true);
@@ -369,7 +677,8 @@
   {
     if (opts === undefined)
     {
-      opts = settings.toJSON();
+      opts = SETTINGS.toJSON();
+      opts.presets = ""+[SETTINGS.width, SETTINGS.height, SETTINGS.mines];
     }
 
     for(let id in opts)
@@ -377,63 +686,105 @@
       const el = EL[id],
             val = opts[id];
 
-      document.body.dataset[id] = ~~val;
+      document.body.dataset[id] = id == "presets" ? val : ~~val;
       if (!el || !el.matches("input,select"))
         continue;
 
-      if (!el.___inited)
-      {
-        elInit(el);
-      }
-      if (el.type == "checkbox")
-      {
-        el.checked = val;
-      }
-      else
-        el.value = opts[id];
-
-
+      elInit(el);
 
     }
   }
   function elInit(el)
   {
-    if (el.___inited)
-      return;
-
-    el.___inited = true;
     if (el.type == "checkbox")
     {
-      el.checked = settings[el.id];
+      el.checked = SETTINGS[el.id];
     }
     else if (el.tagName == "SELECT")
     {
       let option = document.createElement("option");
-      for(let i = settings.min[el.id],  def = settings.default[el.id], map = settings.map[el.id]||[]; i <= settings.max[el.id]; i++)
+      if (el.id == "presets")
       {
-        option = option.cloneNode(true);
-        option.textContent = map[i] === undefined ? i : map[i];
-        option.value = i;
-        option.className = i == def ? "default" : "";
-        el.appendChild(option);
+        if (!el.children.length)
+        {
+          const def = ""+[SETTINGS.default.width, SETTINGS.default.height, SETTINGS.default.mines];
+          for(let name in presets)
+          {
+            option.value = presets[name];
+            option.textContent = name;
+            option.className = option.value == def ? "default" : "";
+            el.appendChild(option);
+            option = option.cloneNode(false);
+          }
+          option.value = "";
+          option.textContent = "Custom";
+          el.appendChild(option);
+        }
+        el.value = ""+[SETTINGS.width, SETTINGS.height, SETTINGS.mines];
+        if (!el.value)
+          el.value = "";
+
+        document.body.dataset[el.id] = el.value;
+
       }
-      el.value = settings[el.id];
+      else
+      {
+        let max = SETTINGS.max[el.id],
+            min = SETTINGS.min[el.id];
+        for(let i = min, n = 0, def = SETTINGS.default[el.id], map = SETTINGS.map[el.id]||[]; i <= max; i++, n++)
+        {
+          option = el.children[n] || option.cloneNode(true);
+          option.textContent = map[i] === undefined ? i : map[i];
+          option.value = i;
+          option.className = i == def ? "default" : "";
+          if (!option.parentNode)
+            el.appendChild(option);
+        }
+        if (!min)
+          max++;
+
+        while(el.children.length > max)
+          el.removeChild(el.children[max]);
+
+        el.value = SETTINGS[el.id];
+      }
     }
     else
     {
-      el.value = settings[el.id];
-      el.min = settings.min[el.id];
-      el.max = el.id == "mines" ? settings.width * settings.height - 1 : settings.max[el.id];
-  
+      el.value = SETTINGS[el.id];
+      el.min = SETTINGS.min[el.id];
+      el.max = el.id == "mines" ? SETTINGS.width * SETTINGS.height - 1 : SETTINGS.max[el.id];
     }
+    if (el.___inited)
+      return;
+
+    el.___inited = true;
     let timerInput, timerFilter;
     el.addEventListener("input", e => 
     {
       const isCheckbox = el.type == "checkbox",
-            isSelect = el.tagName  == "SELECT",
-            value = isCheckbox ? el.checked : isSelect ? ~~el.value : Math.max(el.min, Math.min( ~~el.value, el.max));
+            isSelect = el.tagName  == "SELECT";
+      let value = isCheckbox ? el.checked : isSelect ? ~~el.value : Math.max(el.min, Math.min( ~~el.value, el.max));
   
-      if (!isCheckbox && !isSelect)
+      if (el.id == "openFirst")
+        value = value;// ? settings.default[el.id] : 0;
+      else if (el.id == "presets")
+      {
+        if (el.value != "")
+        {
+          value = el.value.split(",");
+          SETTINGS.width = +value[0];
+          SETTINGS.height = +value[1];
+          SETTINGS.mines = +value[2];
+          value += "";
+        }
+        else
+        {
+          value = "";
+        }
+      }
+
+      if (!isCheckbox && !isSelect && SETTINGS.resetBoard[el.id]) /* text input */
       {
         clearTimeout(timerFilter);
         if (el.value != value)
@@ -441,7 +792,7 @@
           timerFilter = setTimeout(() => (el.value = value, init(true)), 3000);
         }
       }
-      settings[el.id] = value;
+      SETTINGS[el.id] = value;
       const opts = {};
       opts[el.id] = value;
       setOptions(opts);
@@ -450,17 +801,21 @@
   
       if (el.id != "mines")
       {
-        const max = settings.width * settings.height - 1;
+        const max = SETTINGS.width * SETTINGS.height - 1;
         EL.mines.max = max;
         if (~~EL.mines.value > max)
         {
-          settings.mines = max;
+          SETTINGS.mines = max;
           EL.mines.value = max;
         }
       }
       clearTimeout(timerInput);
-      if (el.id != "animation")
-        timerInput = setTimeout(() => init(true), isSelect ? 0 : 300);
+      if (["presets"].includes(el.id) || SETTINGS.resetBoard[el.id])
+        timerInput = setTimeout(() =>
+        {
+          init(true);
+          setOptions();
+        }, isSelect ? 0 : 300);
   
     });
   }
@@ -472,7 +827,7 @@
         clientY = 0,
         mouseDown = null;
   
-    window.addEventListener("touchstart", e =>
+    EL.table.addEventListener("touchstart", e =>
     {
   
       if (e.touches.length === 2)
@@ -482,39 +837,64 @@
         e.preventDefault();
       }
     });
-    window.addEventListener("touchmove", e =>
+
+    EL.table.addEventListener("touchmove", e =>
     {
       if (!scaling)
         return;
       
-      e.preventDefault();
+      // e.preventDefault();
       const dist = Math.hypot(e.touches[0].pageX - e.touches[1].pageX, e.touches[0].pageY - e.touches[1].pageY);
-      let zoom = settings.zoom;
+      let zoom = SETTINGS.zoom;
       // EL.difficulty.textContent = [settings.zoom, settings.min.zoom, settings.max.zoom];
   
       if (Math.abs(dist - scaling) > 10)
       {
         zoom += dist - scaling > 0 ? 1 : -1;
-        if (zoom < settings.min.zoom)
-          zoom = settings.min.zoom;
+        if (zoom < SETTINGS.min.zoom)
+          zoom = SETTINGS.min.zoom;
   
-        if (zoom > settings.max.zoom)
-          zoom = settings.max.zoom;
+        if (zoom > SETTINGS.max.zoom)
+          zoom = SETTINGS.max.zoom;
   
         scaling = dist;
-        settings.zoom = zoom;
+        SETTINGS.zoom = zoom;
         timerZoom = setTimeout(setZoom, 10);
       }
   
     },{passive: false});
   
-    window.addEventListener("touchend", e =>
+    EL.table.addEventListener("touchend", e =>
     {
       if (!scaling)
         return;
   
       scaling = false;
     });
+
+    window.addEventListener("wheel", e =>
+    {
+      if (!isParent(e.target, "body") || e.ctrlKey)
+        return;
+  
+      e.preventDefault();
+      e.stopPropagation();
+  
+      let zoom = SETTINGS.zoom;
+      // EL.difficulty.textContent = [settings.zoom, settings.min.zoom, settings.max.zoom];
+  
+      zoom += e.deltaY < 0 ? 1 : -1;
+      if (zoom < SETTINGS.min.zoom)
+        zoom = SETTINGS.min.zoom;
+  
+      if (zoom > SETTINGS.max.zoom)
+        zoom = SETTINGS.max.zoom;
+  
+      SETTINGS.zoom = zoom;
+      timerZoom = setTimeout(setZoom, 10);
+  
+    },{passive: false});
+  
   
     function isParent(el, selector)
     {
@@ -523,30 +903,7 @@
   
       return el.matches(selector) || isParent(el.parentNode, selector);
     }
-    window.addEventListener("wheel", e =>
-    {
-      if (!isParent(e.target, "#table,#tableCanvas") || e.ctrlKey)
-        return;
-  
-      e.preventDefault();
-      e.stopPropagation();
-  
-      let zoom = settings.zoom;
-      // EL.difficulty.textContent = [settings.zoom, settings.min.zoom, settings.max.zoom];
-  
-      zoom += e.deltaY < 0 ? 1 : -1;
-      if (zoom < settings.min.zoom)
-        zoom = settings.min.zoom;
-  
-      if (zoom > settings.max.zoom)
-        zoom = settings.max.zoom;
-  
-      settings.zoom = zoom;
-      timerZoom = setTimeout(setZoom, 10);
-  
-    },{passive: false});
-  
-  
+
     function onMouseMove (e)
     {
       if ((dragScroll && e.clientX == clientX && e.clientY == clientY)
@@ -568,6 +925,7 @@
       ({clientX, clientY} = e);
   
     }
+
     function onMouseUp(e)
     {
       clearTimeout(timerTimeout);
@@ -602,23 +960,18 @@
       window.addEventListener("mousemove", onMouseMove);
     });
   }
+
   EL.reset.addEventListener("click", init);
   EL.table.addEventListener("click", onClick);
   EL.table.addEventListener("auxclick", onClick);
   EL.table.addEventListener("contextmenu", onClick);
-  EL.pause.addEventListener("click", e =>
-  {
-    pause();
-  });
-  
-  
+  EL.pause.addEventListener("click", e => pause());
   
   window.addEventListener("DOMContentLoaded", e =>
   {
     board = canvas().init();
-    console.log(board);
     // board && board.draw();
-    init(!settings.table.length);
+//    init(!settings.table.length);
   });
   
   
@@ -626,90 +979,115 @@
   {
     if (p === undefined)
     {
-      p = !settings.stats.pauseTime;
-      if (p && !settings.stats.start)
-        return;
+      p = !SETTINGS.stats.pauseTime;
+      if (p && !SETTINGS.stats.start)
+        return setState();
     }
-    document.body.classList.toggle("pause", p ? true : false);
     if (p)
     {
-      if (!settings.stats.start)
-        return;
+      if (!SETTINGS.stats.start)
+        return setState();
   
-      settings.stats.pauseTime = new Date().getTime();
-      settings.stats.pauseStart = settings.stats.start;
-      settings.stats.start = 0;
-      settings.stats.started = 1;
+      SETTINGS.stats.pauseTime = new Date().getTime();
+      SETTINGS.stats.pauseStart = SETTINGS.stats.start;
+      SETTINGS.stats.start = 0;
+      SETTINGS.stats.started = 1;
     }
     else
     {
-      if (settings.stats.pauseTime )
+      if (SETTINGS.stats.pauseTime )
       {
-        settings.stats.start = new Date().getTime() - settings.stats.pauseTime  + settings.stats.pauseStart ;
+        SETTINGS.stats.start = new Date().getTime() - SETTINGS.stats.pauseTime  + SETTINGS.stats.pauseStart ;
       }
   
-      settings.stats.pauseTime  = 0;
+      SETTINGS.stats.pauseTime  = 0;
     }
-    if (settings.pauseTime || settings.stats.start)
-      settings.stats.started = 1;
-    settings.save();
+    if (SETTINGS.stats.pauseTime || SETTINGS.stats.start)
+      SETTINGS.stats.started = 1;
+
+    setState();
+    
+    SETTINGS.save();
+    init(false, false);
   }
-  
+
   function setZoom(z)
   {
     if (z === undefined)
-      z = settings.zoom;
+      z = SETTINGS.zoom;
     document.body.style.setProperty("--zoom", ((z/7*z/7) + 1) +"em");
     board && board.update();
   
   }
+
+  function setState(f)
+  {
+    if (f === undefined)
+      f = SETTINGS.stats.start ? STATE_STARTED : SETTINGS.stats.pauseTime ? STATE_PAUSED : STATE_STOPPED;
+
+    document.body.dataset.state = ["", "start", "pause"][f];
+    EL.pause.disabled = !f;
+    EL.pause.textContent = ["Pause", "Pause", "Resume"][f];
+  }
+
   function onClick(e)
   {
     e.preventDefault();
   
-    if (gameStatus || dragScroll || e.target === EL.table || (e.type == "auxclick" && e.button == 2))
+    if (gameStatus || dragScroll || e.target === EL.table || SETTINGS.stats.pauseTime || (e.type == "auxclick" && e.button == 2))
       return;
   
     const index = Array.from(EL.table.children).indexOf(e.target),
-          leftClick = settings.click ? e.type == "click" : e.type != "click";
+          leftClick = SETTINGS.click ? e.type != "click" : e.type == "click";
   
-    let val = settings.table[index];
+    let val = SETTINGS.table[index];
     if ((leftClick && (val & OPEN || val & FLAG || val & SHOW)) || (!leftClick && val & OPEN))
       return;
   
-    settings.stats.steps[settings.stats.steps.length] = (index << 1) | !leftClick; //set bit1 = flag
+    SETTINGS.stats.steps[SETTINGS.stats.steps.length] = (index << 1) | !leftClick; //set bit1 = flag
   
-    if (!settings.stats.start)
+    if (!SETTINGS.stats.start)
       timer();
-  
+
+    setState();
+
     if (leftClick)
     {
       audio("dig");
       openCell(index);
       if ((val & TYPE) == MINE)
       {
-        settings.stats.time = new Date().getTime() - settings.stats.start;
+        SETTINGS.stats.time = new Date().getTime() - SETTINGS.stats.start;
+        anim.explode.timer = anim.explode.duration+1;
+        setTimeout(() =>
+        {
+          anim.explode.timer = 0;
+          anim.explode.el.style.setProperty('--shakeX', '');
+          anim.explode.el.style.setProperty('--shakeY', '');
+          anim.explode.el.style.setProperty('--shakeR', '');
+        }, anim.explode.duration);
         audio("explode");
+        saveStats(0);
         return finished();
       }
     }
     else
     {
-      settings.table[index] ^= FLAG;
-      audio("flag" + (settings.table[index] & FLAG ? "" : "off"));
+      SETTINGS.table[index] ^= FLAG;
+      audio("flag" + (SETTINGS.table[index] & FLAG ? "" : "off"));
 
       e.target.dataset.type = FLAG;
-      settings.stats.mines += val & FLAG ? -1 : 1;
+      SETTINGS.stats.mines += val & FLAG ? -1 : 1;
     }
   
-    if (!(settings.table[index] & OPEN + FLAG))
+    if (!(SETTINGS.table[index] & OPEN + FLAG))
       delete e.target.dataset.type;
   
     if (isWon())
     {
-      settings.stats.time = new Date().getTime() - settings.stats.start;
-      console.log(perfect, settings.stats);
-      audio(settings.stats.steps.length == perfect ? "perfect" : "win");
+      SETTINGS.stats.time = new Date().getTime() - SETTINGS.stats.start;
+      audio(SETTINGS.stats.steps.length == perfect.val ? "perfect" : "win");
+      saveStats(1);
       finished(true);
     }
     else
@@ -717,14 +1095,35 @@
       board && board.update();
     }
   
-    settings.save();
+    SETTINGS.save();
     //  e.target.textContent = val;
+  }//onClick()
+
+  function saveStats(win)
+  {
+    let stats = STATS[[SETTINGS.width,SETTINGS.height,SETTINGS.mines]],
+    now = new Date().getTime(),
+    table = SETTINGS.table;
+    if (!stats[now])
+      stats[now] = [];
+
+    stats = stats[now];
+
+    stats[STATS_RESULT] = ~~win;
+    stats[STATS_STEPS] = [...SETTINGS.stats.steps];
+    stats[STATS_MINES] = table.reduce((ret, v, i) => ((v & TYPE) == MINE && (ret[ret.length] = i), ret), []);
+    stats[STATS_TIME] = SETTINGS.stats.time;
+    stats[STATS_PERFECT] = perfect.val;
+    STATS.save();
   }
-  
+
   function finished(won)
   {
-    settings.stats.start = 0;
-    animation();
+console.log("finished", won);
+    SETTINGS.stats.start = 0;
+    setState();
+    // animation();
+    animations.stop();
     document.body.classList.add("finished");
     if (won)
     {
@@ -738,28 +1137,35 @@
       console.log("game over");
       gameStatus = LOOSE;
     }
-    let steps = settings.stats.steps.map(a => a >> 1);
-    for(let i = 0; i < settings.table.length; i++)
+    let steps = SETTINGS.stats.steps.map(a => a >> 1);
+    let mines = 0;
+    const table = SETTINGS.table;
+    for(let i = 0; i < table.length; i++)
     {
       const elCell = EL.table.children[i];
-      if (settings.table[i] & OPEN+FLAG)
+      if (table[i] & OPEN+FLAG)
       {
         elCell.classList.add("opened");
       }
       else
       {
-        // settings.table[i] |= SHOW;
+        // table[i] |= SHOW;
         // elCell.classList.add("shown");
       }
-      const type = settings.table[i] & TYPE;
+      const type = table[i] & TYPE;
       if (type == MINE)
       {
-        settings.table[i] |= SHOW;
+        table[i] |= SHOW;
         elCell.classList.add("shown");
         elCell.dataset.type = type;
+        if (won)
+          table[i] |= FLAG;
+
+        if (table[i] & FLAG)
+          mines++;
       }
       // animation(elCell, type);
-      if (settings.table[i] & FLAG)
+      if (table[i] & FLAG)
         elCell.classList.add("flag");
   
       const pos = steps.reduce((a, v, n) =>
@@ -781,49 +1187,67 @@
   
     
     }
-    anim.index = settings.stats.steps[settings.stats.steps.length - 1]>>1;
+    SETTINGS.stats.mines = mines;
+    anim.index = SETTINGS.stats.steps[SETTINGS.stats.steps.length - 1]>>1;
     EL.table.children[anim.index].classList.add("last");
     anim.shakeEl = EL.table.children[anim.index];//EL.table.querySelector('*[data-type="9"].shown.last:not(.flag).last');
-    settings.save(); //save settings
+    SETTINGS.save(); //save settings
+    STATS.show();
     board && board.update();
   }//finished();
-  
+
   function isFinished()
   {
     let good = 0,
-        result = 0;
+        result = 0,
+        table = SETTINGS.table,
+        flagRequire = SETTINGS.flagRequire;
   
-    for(let i = 0; i < settings.table.length; i++)
+    for(let i = 0; i < table.length; i++)
     {
-      const val = settings.table[i],
+      const val = table[i],
             type = val & TYPE,
+            isMine = type == MINE,
             isFlag = val & FLAG,
             isOpen = val & OPEN,
             isShow = val & SHOW;
   
-      if (type == MINE && isFlag || (type != MINE && !isFlag && isOpen))
+      if ((isMine && ((flagRequire && isFlag) || (!flagRequire && !isOpen))) || (type != MINE && !isFlag && isOpen))
         good++;
   
-      if (isShow || (isOpen && type == MINE & !isFlag))
+      if (isShow || (isOpen && isMine && !isFlag))
         result = LOOSE;
     }
-    return good == settings.table.length ? WIN : result;
+    return good == table.length ? WIN : result;
   }
 
   function isWon()
   {
-    for(let i = 0; i < settings.table.length; i++)
+    let opened = 0,
+        mines = 0,
+        flagRequire = SETTINGS.flagRequire,
+        table = SETTINGS.table;
+    for(let i = 0; i < table.length; i++)
     {
-      const val = settings.table[i],
-            type = val & TYPE;
+      const val = table[i],
+            type = val & TYPE,
+            isOpen = val & OPEN,
+            isFlag = val & FLAG,
+            isMine = type == MINE;
   
-      if (val & SHOW || (!(type != MINE && val & OPEN) && !(type == MINE && val & FLAG)))
+      if (val & SHOW || (isMine && isOpen) || (flagRequire && isMine && !isFlag))// || !((type != MINE && val & OPEN) || (type == MINE && val & FLAG)))
         return false;
+
+      if (isOpen)
+        opened++;
+
+      if  (isMine)
+        mines++;
     }
-    return true;
+    return opened + mines == table.length;
   }
 
-  function setText(el, text)
+  function showDigits(el, text)
   {
     el.textContent = text;
     el.dataset.ghost = "".padEnd((""+text).length, 8);
@@ -833,29 +1257,20 @@
   {
     if (timestamp === undefined)
     {
-      settings.stats.start = new Date().getTime();
-      settings.stats.started = 1;
+      SETTINGS.stats.start = new Date().getTime();
+      SETTINGS.stats.started = 1;
     }
   
-    if (timestamp - settings.stats.timestamp > 15)
+    if (timestamp - SETTINGS.stats.timestamp > 15)
     {
-      settings.stats.timestamp = timestamp;
-      if (settings.stats.start)
-        settings.stats.time = new Date().getTime() - settings.stats.start;
-  
-      let time = getTimeData(settings.stats.time).string;//.split(/[:.]/);
-      for(let i = 0, val; i < EL.clock.children.length; i++)
-      {
-        val = time[EL.clock.children[i].dataset.time];
-        if (anim.clock[i] != val)
-        {
-          anim.clock[i] = val;
-          setText(EL.clock.children[i], val);
-        }
-      }
-      setText(EL.minesFound, settings.stats.mines);
-      setText(EL.minesPercent, Math.round(settings.stats.mines * 100 / settings.mines));
-      setText(EL.steps, settings.stats.steps.length);
+      SETTINGS.stats.timestamp = timestamp;
+      if (SETTINGS.stats.start)
+        SETTINGS.stats.time = new Date().getTime() - SETTINGS.stats.start;
+
+      const time = showClock(EL.clock, SETTINGS.stats.time, anim.clock);
+      showDigits(EL.minesFound, SETTINGS.stats.mines);
+      showDigits(EL.minesPercent, Math.round(SETTINGS.stats.mines * 100 / SETTINGS.mines));
+      showDigits(EL.steps, SETTINGS.stats.steps.length);
       EL.clock.classList.toggle("blink", time.ms > 500);
     }
     if (gameStatus == LOOSE && (!anim.shake || timestamp - anim.shake > anim.shakeFrame))
@@ -869,23 +1284,49 @@
       if (board)
         board.shakeCell(anim.index);
     }
-    // if (timestamp - anim.timers.blink > 1000)
-    // {
-    //   anim.timers.blink = timestamp;
-    //   anim.blink = settings.stats.start && !anim.blink;
-    //   EL.clock.classList.toggle("blink", anim.blink);
-    // }
+    if (anim.explode.timer && timestamp - anim.explode.timer > 10)
+    {
+      anim.explode.timer = timestamp;
+      anim.explode.el.style.setProperty("--shakeX", ~~(Math.random() * anim.explode.shake * 2 -anim.explode.shake) / 30 + "em");
+      anim.explode.el.style.setProperty("--shakeY", ~~(Math.random() * anim.explode.shake * 2 -anim.explode.shake) / 30 + "em");
+      anim.explode.el.style.setProperty("--shakeR", ~~(Math.random() * anim.explode.shake * 2 -anim.explode.shake) / 7  + "deg");
+    }
     requestAnimationFrame(timer);
   }
   
-  function getTime(time)
+  function showClock(el, time, prev = [], minimum = false)
+  {
+    time = getTimeData(time).string;//.split(/[:.]/);
+
+    for(let i = 0, val, hide = minimum; i < el.children.length; i++)
+    {
+      val = time[el.children[i].dataset.time];
+      if (prev[i] != val)
+      {
+        prev[i] = val;
+        if (val && val != "00")
+        {
+          if (hide)
+            val = val.replace(/^0/, "");
+          hide = false;
+        }
+        showDigits(el.children[i], val);
+  
+        el.children[i].classList.toggle("hidden", i < 3 && hide);
+      }
+    }
+    return time;
+  }
+
+  function getTime(time, minimum = false)
   {
     const t = getTimeData(time);
-    return (t.d ? t.d+"d":"") +
-            (""+t.h).padStart(2,0) + ":" + 
-            (""+t.m).padStart(2,0) + ":" + 
-            (""+t.s).padStart(2,0) + "." + 
-            (""+t.ms).padStart(3,0);
+    let ret = (t.d ? t.d+"d":"") +
+              (""+t.h).padStart(2,0) + ":" + 
+              (""+t.m).padStart(2,0) + ":" + 
+              (""+t.s).padStart(2,0) + "." + 
+              (""+t.ms).padStart(3,0);
+    return minimum ? ret.replace(/^(00:)+/, "") : ret;
   }
   
   function getTimeData(time, string)
@@ -913,7 +1354,7 @@
   
   function getBorders(index) //set borders around same type of cells
   {
-    const item = settings.table[index],
+    const item = SETTINGS.table[index],
           borders = [],
           isOpen = ~~Boolean(item & OPEN),
           isFlag = ~~Boolean(item & FLAG),
@@ -930,7 +1371,7 @@
   // console.log(deb2);
     for(let i = 0; i < neighbors.length; i++)
     {
-      const nItem = settings.table[neighbors[i]] === undefined ? -(FLAG << 1) : settings.table[neighbors[i]],
+      const nItem = SETTINGS.table[neighbors[i]] === undefined ? -(FLAG << 1) : SETTINGS.table[neighbors[i]],
             nOpen = ~~Boolean(nItem & OPEN),
             nFlag = ~~Boolean(nItem & FLAG),
             nShow = ~~Boolean(nItem & SHOW),
@@ -952,14 +1393,23 @@
   
   }
 
-  function showCell(index)
+  function showCell(index, animated)
   {
     const elCell = EL.table.children[index];
 
-    elCell.dataset.type = settings.table[index] & TYPE;
-    elCell.classList.add("shown");
+    if (animated)
+    {
+      elCell.classList.add("anim");
+    }
+    else
+    {
+      elCell.classList.add("shown");
+      elCell.classList.remove("anim");
+    }
+    elCell.dataset.type = SETTINGS.table[index] & TYPE;
     return elCell;
   }
+
   function openCell(index, table, animate = true)
   {
     const array = [index],
@@ -969,7 +1419,13 @@
     if (!table)
     {
       show = true;
-      table = settings.table;
+      table = SETTINGS.table;
+    }
+
+    let animation;
+    if (animate && SETTINGS.animation)
+    {
+      animation = animations.new({start: true});
     }
     while(array.length)
     {
@@ -977,22 +1433,21 @@
       if (table[index] === undefined)
         break;
 
-      if (table[index] & OPEN)
+      let isOpen = table[index] & OPEN;
+      if (isOpen)
         continue;
 
       if (show)
       {
 
-        if (animate)
-          animation(index);
-        else
-          showCell(index);
+        showCell(index, animation);
+        animation && animation.add(index);
       // const borders = getBorders(index);
       // for(let b = 0; b < borders.length; b++)
       //   elCell.classList.toggle(BORDERS[b], Boolean(borders[b]));
 
-        if (!(table[index] & OPEN))
-          settings.stats.open++;
+        if (!isOpen)
+          SETTINGS.stats.open++;
 
       }
       table[index] |= OPEN;
@@ -1001,7 +1456,7 @@
       if (table[index] == OPEN)
       {
         let offset = [];
-        // OFFSET.push(OFFSET.shift(), OFFSET.shift());
+//        OFFSET.push(OFFSET.shift(), OFFSET.shift());
         for(let o = 0; o < OFFSET.length; o+=2)
         {
           offset[o/2] = [OFFSET[o], OFFSET[o+1]];
@@ -1100,19 +1555,21 @@
     return Math.round(Math.random() * (max - min) + min);
   }
   
-  function init(reset = false)
+  function init(reset = false, checkPause = true)
   {
-    settings.stats.started = 0;
-    animation();
+    if (checkPause)
+      SETTINGS.stats.started = 0;
+
+    animations.stop();
     gameStatus = 0;
     EL.table.className = "";
     document.body.classList.remove("finished");
     document.body.classList.remove("won");
-    settings.stats.timestamp = 0;
+    SETTINGS.stats.timestamp = 0;
     let opened = false;
-    for(let i = 0, mask = OPEN + FLAG; i < settings.table.length; i++)
+    for(let i = 0, mask = OPEN + FLAG; i < SETTINGS.table.length; i++)
     {
-      if (settings.table[i] & mask)
+      if (SETTINGS.table[i] & mask)
       {
         opened = true;
         break;
@@ -1123,43 +1580,47 @@
   
     if (reset)
     {
-      for(let i in settings.stats)
-        settings.stats[i] = 0;
+      for(let i in SETTINGS.stats)
+        SETTINGS.stats[i] = 0;
   
-      settings.stats.steps = [];
-      settings.table.length = 0; //reset
+      SETTINGS.stats.steps = [];
+      SETTINGS.table.length = 0; //reset
     }
-    settings.table.length = settings.width * settings.height;
+    SETTINGS.table.length = SETTINGS.width * SETTINGS.height;
     if (reset)
     {
-      const max = Math.min(settings.mines, settings.table.length - 1);
+      const max = Math.min(SETTINGS.mines, SETTINGS.table.length - 1);
       let mines = 0;
   
       while(mines < max)
       {
-        const mine = rand(0, settings.table.length-1);
-        if (!settings.table[mine])
+        const mine = rand(0, SETTINGS.table.length-1);
+        if (!SETTINGS.table[mine])
         {
           mines++;
-          settings.table[mine] = MINE;
+          SETTINGS.table[mine] = MINE;
         }
       }
     }
-    while(EL.table.children.length > settings.table.length)
+    while(EL.table.children.length > SETTINGS.table.length)
       EL.table.removeChild(EL.table.lastChild);
   
     let started = false,
         flags = 0,
         mines = 0,
+        paused = SETTINGS.stats.pauseTime,
         perfectSteps = [],
         perfectList = {},
-        table = [];
+        empty = [],
+        notEmpty = [],
+        newTable = [];
 
-    perfect = 0;
-    for(let i = 0, OPENED = OPEN + SHOW; i < settings.table.length; i++)
+    perfect[0] = 0;
+    perfect[1] = 0;
+    for(let i = 0, OPENED = OPEN + SHOW, table = SETTINGS.table; i < table.length; i++)
     {
       const elCell = EL.table.children[i] || document.createElement("span"),
-            item = settings.table[i];
+            item = table[i];
   
       let itemType = item & TYPE;
   
@@ -1172,6 +1633,10 @@
         delete elCell.dataset[i];
 
       elCell.title = "";
+      if (paused)
+      {
+        delete elCell.dataset.type;
+      }
       if (reset)
       {
         let minesNum = 0;
@@ -1181,10 +1646,10 @@
           {
             let index = getIndexOffset(i, OFFSET[o], OFFSET[o+1]); //right
     // console.log(i, index, mines);
-            if (settings.table[index] == MINE)
+            if (table[index] == MINE)
               minesNum++;
           }
-          settings.table[i] = itemType = minesNum;
+          table[i] = itemType = minesNum;
         }
         // elCell.textContent = table[i];
         // for(let i in elCell.dataset)
@@ -1197,81 +1662,90 @@
         if (item & OPENED)
         {
           elCell.classList.add("shown");
-          elCell.dataset.type = item & TYPE;
+          if (!paused)
+            elCell.dataset.type = itemType;
+
           // animation(elCell, item & TYPE);
           started = true;
         }
         if(item & FLAG)
         {
-          elCell.dataset.type = FLAG;
+          if (!paused)
+            elCell.dataset.type = FLAG;
+
           flags++;
           started = true;
         }
       }
-      if ((settings.table[i] & TYPE) == MINE)
+      if ((table[i] & TYPE) == MINE)
         mines++;
-  
-      table[table.length] = itemType;
+      else
+      {
+        if (table[i] & TYPE)
+          notEmpty[notEmpty.length] = i;
+        else
+        {
+          empty[empty.length] = i;
+          // elCell.classList.add("empty");
+        }
+      }
+      newTable[newTable.length] = itemType;
     }//for settings.table
-    const _table = Object.assign([], table);
-    for(let i = 0; i < settings.table.length; i++)
+    const _table = Object.assign([], newTable);
+    for(let i = 0, table = SETTINGS.table; i < table.length; i++)
     {
-      if (perfectList[i] !== undefined || (settings.table[i] & TYPE) != 0)
+      if (perfectList[i] !== undefined || (table[i] & TYPE) != 0)
         continue;
   
-      Object.assign(perfectList, openCell(i, _table));
-      perfect++;
+      Object.assign(perfectList, openCell(i, _table, false));
+      perfect[0]++;
+      perfect[1]++;
       perfectSteps[perfectSteps.length] = i;
     }
-  // console.log(table);
-  
-  // console.log(settings.table);
-  // console.log(perfectSteps);
-  // console.log(perfectList);
-    for(let i = 0; i < settings.table.length; i++)
+
+    for(let i = 0, table = SETTINGS.table; i < table.length; i++)
     {
-      if (perfectList[i] === undefined && (settings.table[i] & TYPE) != MINE)
+      if (perfectList[i] === undefined && (table[i] & TYPE) != MINE)
       {
-        perfect++;
-        perfectList[i] = settings.table[i];
+        perfect[0]++;
+        perfect[1]++;
+        perfectList[i] = table[i];
         perfectSteps[perfectSteps.length] = i;
       }
     }
     // console.log(perfectList);
   
-    if (started && difficulty() > settings.openFirst)
+    if (SETTINGS.openFirst && started && difficulty() > difficultyCheat)
     {
-      perfect--;
+      perfect[0]--;
+      perfect[1]--;
     }
   // console.log(perfect, mines, perfectSteps);
     // if (flags !== settings.stats.mines)
     // {
     //   settings.stats.mines = flags;
     // }
-    document.body.style.setProperty("--cols", settings.width);
-    document.body.style.setProperty("--rows", settings.height);
+    let {width, height} = getWidthHeight();
+
+    document.body.style.setProperty("--cols", width);
+    document.body.style.setProperty("--rows", height);
     // for(let i = 0; i < settings.height; i++)
     //   console.log(settings.table.slice(i * settings.width, i * settings.width + settings.width));
     
-    setText(EL.minesTotal, settings.mines);
+    showDigits(EL.minesTotal, SETTINGS.mines);
 
-    settings.save(); //save settings
+    SETTINGS.save(); //save settings
     timer(0);
     const finish = isFinished();
     if (finish)
       finished(finish == WIN);
   
-    EL.difficulty.textContent = ["Can't loose", "Don't wanna think", "Super easy", "Easy", "Normal", "Medium", "Hard", "Very hard", "I can do this!", "I'll try it anyway", "Impossible", "Gotta buy a lottery"][Math.min(~~(difficulty() * 3 / 11), 11)];// + " [" + ~~(difficulty()) + "%]";
+    EL.difficulty.textContent = Object.keys(presets)[Math.min(~~(difficulty() * 3 / 11), 11)];// + " [" + ~~(difficulty()) + "%]";
+    EL.menuDifficulty.textContent = EL.difficulty.textContent;
     EL.difficulty.dataset.value = ~~(difficulty() + 1);
   
-    if (!started && difficulty() > settings.openFirst)
+    if (!started && SETTINGS.openFirst && difficulty() > difficultyCheat)
     {
-      let empty = [];
-      for(let i = 0; i < settings.table.length; i++)
-      {
-        if (!settings.table[i])
-          empty[empty.length] = i;
-      }
       // empty.forEach(e => {
       //   if (!(settings.table[e] & OPEN))
       //   {
@@ -1280,32 +1754,60 @@
       //   }
       // });
 
+      let list = empty;
+
       if (empty.length)
       {
-        perfect--;
-        openCell(empty[~~(rand(0, empty.length-1))], undefined, false);
+        perfect[0]--;
+        perfect[1]--;
       }
+      else if(notEmpty.length > 1)
+        list = notEmpty;
+
+      if (list.length)
+        openCell(list[~~(rand(0, list.length-1))], undefined, false);
   
     }
-    perfect += mines;
-    setText(EL.perfect, perfect);
+    perfect[1] += mines;
+    showDigits(EL.perfect, perfect.val);
     board && board.update();
-    pause(settings.stats.pauseTime);
+    if (checkPause)
+    {
+      pause(SETTINGS.stats.pauseTime);
+      if (!finish)
+        STATS.show();
+    }
+
   }// init();
   
   function difficulty()
   {
-    return settings.mines * 100 / (settings.width * settings.height);
+    return SETTINGS.mines * 100 / (SETTINGS.width * SETTINGS.height);
+  }
+
+  function getWidthHeight(width, height)
+  {
+    if (width === undefined) 
+      width = SETTINGS.width;
+    if (height === undefined)
+      height = SETTINGS.height;
+
+    if (window.innerHeight > window.innerWidth)
+    {
+      [width,height] = [height,width];
+    }
+    return {width, height};
+  }
+
+  function indexToXY(index, w = SETTINGS.width, h = SETTINGS.height)
+  {
+    const {width, height} = getWidthHeight(w, h);
+    return {x: index % width, y: ~~(index / width), width, height};
   }
   
-  function indexToXY(index, width = settings.width, height = settings.height)
+  function getIndexOffset(index, offsetX, offsetY)
   {
-    return {x: index % width, y: ~~(index / width)};
-  }
-  
-  function getIndexOffset(index, offsetX, offsetY, width = settings.width, height = settings.height)
-  {
-    let {x, y} = indexToXY(index, width, height);
+    let {x, y, width, height} = indexToXY(index);
     x += offsetX;
     y += offsetY;
     if (x < 0 || x > width-1 || y < 0 || y > height-1)
@@ -1319,14 +1821,14 @@
   function setTheme(theme)
   {
     if (theme === undefined)
-      theme = settings.darkMode;
+      theme = SETTINGS.darkMode;
   
     if (theme == 2)
       document.documentElement.removeAttribute("theme");
     else
-      document.documentElement.setAttribute("theme", settings.darkMode ? "dark" : "light");
+      document.documentElement.setAttribute("theme", SETTINGS.darkMode ? "dark" : "light");
   
-    settings.darkMode = theme;
+    SETTINGS.darkMode = theme;
     const style = document.getElementById("dropdownstyle") || document.createElement("style"),
           s = getComputedStyle(document.querySelector("select")),
           css = `label.dropdown{${Array.from(s).map(k =>`${k}:${s[k]}`).join(";")}}`;
@@ -1401,8 +1903,8 @@
         this.textSize = this.cellSize - this.offset + 0.5;
         this.textSizeSmall = this.textSize / 3.5;
         this.shadowSize = this.cellSize / 10;
-        this.ctx.width = settings.width * this.cellSize + this.shadowSize*2;
-        this.ctx.height = settings.height * this.cellSize + this.shadowSize*2;
+        this.ctx.width = SETTINGS.width * this.cellSize + this.shadowSize*2;
+        this.ctx.height = SETTINGS.height * this.cellSize + this.shadowSize*2;
         this.canvas.width = this.ctx.width;
         this.canvas.height = this.ctx.height;
         this.images = {};
@@ -1421,8 +1923,8 @@
         this.textSize = this.cellSize - this.offset + 0.5;
         this.textSizeSmall = this.textSize / 3.5;
         this.shadowSize = this.cellSize / 10;
-        this.ctx.width = settings.width * this.cellSize + this.shadowSize*2;
-        this.ctx.height = settings.height * this.cellSize + this.shadowSize*2;
+        this.ctx.width = SETTINGS.width * this.cellSize + this.shadowSize*2;
+        this.ctx.height = SETTINGS.height * this.cellSize + this.shadowSize*2;
         this.canvas.width = this.ctx.width;
         this.canvas.height = this.ctx.height;
         this.font = "bold " + this.textSize + "px " + this.style.font;
@@ -1483,10 +1985,10 @@
               reg = [],
               visible = [];
   
-        for(let i = 0, value, type; i < settings.table.length; i++)
+        for(let i = 0, value, type; i < SETTINGS.table.length; i++)
         {
-          value = settings.table[i];
-          type = settings.table[i] & TYPE;
+          value = SETTINGS.table[i];
+          type = SETTINGS.table[i] & TYPE;
           if (value & FLAG)
             flags[flags.length] = i;
           else if (type == MINE && (value & SHOW || value & OPEN))
@@ -1496,7 +1998,7 @@
   
         }
         mines.reverse();
-        const mine = mines.indexOf(settings.table.indexOf(MINE + OPEN));
+        const mine = mines.indexOf(SETTINGS.table.indexOf(MINE + OPEN));
         mines.splice(0, 0, mines.splice(mine, 1)[0]);
         this.savedCell = null;
         this.tableSorted.draw = this.tableSorted.draw.concat(mines, reg, flags);
@@ -1555,7 +2057,7 @@
   
       loadSteps()
       {
-        this.steps = settings.stats.steps.map(a => a >> 1);
+        this.steps = SETTINGS.stats.steps.map(a => a >> 1);
       }
   
       shakeCell(index)
@@ -1706,7 +2208,7 @@
       cell(index)
       {
         const {x, y} = indexToXY(index),
-              value = settings.table[index],
+              value = SETTINGS.table[index],
               type = value & TYPE,
               size = this.getTextBox(type);
         return {
@@ -1760,5 +2262,5 @@
   
     };
   }
-  }
-  
+
+}
