@@ -180,7 +180,10 @@
             {
               if (i == "table" && data[i])
               {
-                data[i] = decode(data[i]);
+                if (data[i].length)
+                  data[i] = decode(data[i]);
+                else
+                  data[i] = new Array(SETTINGS.width * SETTINGS.height).fill(0);
               }
               let value = this.check(target, i, data[i]),
                   obj = false;
@@ -227,7 +230,10 @@
               let val = target[key].value;
               if (key == "table")
               {
-                val = encode(val);
+                if (SETTINGS.stats.started || SETTINGS.stats.time)
+                  val = encode(val);
+                else
+                  val = [];
               }
   // for(let i = 0; i < 256; i++)
   // {
@@ -342,7 +348,7 @@
 
             const isAll = obj === this._stats.all,
                   pref = "stats_" + (isAll ? "all_" : ""),
-                  boardSizeText = ["x", "@", " mines"]
+                  boardSizeText = ["x", "@", " mines"];
 
             for(let i in this._stats.all)
             {
@@ -396,6 +402,7 @@
                     steps: 0,
                     clicked: 0,
                     flags: 0,
+                    questions: 0,
                     best: 0,
                     worst: 0,
                     perfect: 0,
@@ -418,7 +425,7 @@
               for(let date in list)
               {
                 data.games++;
-                const flagsSet = {},
+                const rightClicks = {},
                       game = list[date];
 
                 data.time += game[STATS_TIME];
@@ -426,14 +433,20 @@
                 for(let i = 0, steps = game[STATS_STEPS]; i < steps.length; i++)
                 {
                   const index = steps[i] >> 1,
-                        isFlag = steps[i] & 1;
+                        isRightClick = steps[i] & 1;
 
-                  if (isFlag)
-                    data.flags += (flagsSet[index] % 2) ? -1 : 1;
+                  if (isRightClick)
+                  {
+                    rightClicks[index] = ~~rightClicks[index] + 1;
+                    const isQuestion = !(2 - rightClicks[index] % 3),
+                          isFlag = !((3 - rightClicks[index] % 3) % 2);
+
+                    data.flags += isFlag ? 1 : isQuestion ? -1 : 0;
+                    data.questions += isQuestion ? 1 : isFlag ? 0 : -1;
+                  }
                   else
                     data.clicked++;
 
-                  flagsSet[index] = ~~flagsSet[index] + 1;
 
                 }
                 if (game[STATS_RESULT])
@@ -1061,7 +1074,7 @@
           table = SETTINGS.table;
   
     let val = table[index];
-    if ((leftClick && (val & OPEN || val & FLAG || val & SHOW || val & QUESTION)) || (!leftClick && val & OPEN) || (!leftClick && !SETTINGS.stats.start))
+    if ((leftClick && (val & OPEN || val & FLAG || val & SHOW)) || (!leftClick && val & OPEN) || (!leftClick && !SETTINGS.stats.start))
       return;
   
     if (!SETTINGS.stats.start)
@@ -1076,6 +1089,7 @@
     if (leftClick)
     {
       audio("dig");
+      SETTINGS.table[index] &= ~QUESTION;
       openCell(index);
       if ((val & TYPE) == MINE)
       {
@@ -1135,6 +1149,7 @@
     }
   
     SETTINGS.save();
+    console.log(table[0], table[0] & FLAG, table[0] & QUESTION)
     //  e.target.textContent = val;
   }//onClick()
 

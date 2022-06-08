@@ -358,7 +358,7 @@ body:not([data-state="pause"]) #table > *[data-type="9"].opened:not(.flag)::befo
 }
 body:not([data-state="pause"]) #table > *[data-type="128"].opened:not(.flag)::before
 {
-  background-image: url(images/flag_red_000.svg);
+  background-image: url(images/flag_transparent_000.svg);
 }
 /* 
 body:not([data-state="pause"]) #table.finished > *[data-type="9"]:not(.flag).top {
@@ -397,7 +397,7 @@ body:not([data-state="pause"]).finished:not(.won) #table > *:not([data-type="9"]
 
 }
 
-body:not([data-state="pause"]).finished #table > *[data-type="9"].shown:not(.flag):not(.opened),
+body:not([data-state="pause"]).finished #table > *[data-type="9"].shown:not(.flag),
 body:not([data-state="pause"]):not(.finished) #table > *[data-type]:not(.flag):not([data-type="64"]):not(.question):not([data-type="128"]):not(.anim),
 body:not([data-state="pause"]) #table > *[data-type]:not(.flag):not([data-type="64"]):not(.question):not([data-type="128"]).opened
 {
@@ -411,7 +411,7 @@ body:not([data-state="pause"]) #table > *[data-type]:not(.flag):not([data-type="
     outline: 1px solid var(--border-color);
 }
 
-body:not([data-state="pause"]) #table > *[data-type="9"]:not(.flag).opened
+body:not([data-state="pause"]) #table > *[data-type="9"]:not(.flag):not(.question).opened
 {
   background-color: var(--cell-mineOpened);
   /* border-style: inset; */
