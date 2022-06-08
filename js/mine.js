@@ -324,7 +324,8 @@
             }
             else
             {
-              target = {};
+              for(const i in target)
+                delete target[i];
             }
             this.save(target);
             this.init(target);
