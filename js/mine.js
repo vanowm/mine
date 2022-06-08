@@ -380,6 +380,9 @@
             val = Math.round(obj.flags * 100 / obj.steps) || 0;
             EL[pref + "flags"].dataset.percent = val;
             EL[pref + "flags"].parentNode.lastElementChild.textContent = "(" + val + "%" + ")";
+            val = Math.round(obj.questions * 100 / obj.steps) || 0;
+            EL[pref + "questions"].dataset.percent = val;
+            EL[pref + "questions"].parentNode.lastElementChild.textContent = "(" + val + "%" + ")";
             val = Math.round(obj.clicked * 100 / obj.steps) || 0;
             EL[pref + "clicked"].dataset.percent = val;
             EL[pref + "clicked"].parentNode.lastElementChild.textContent = "(" + val + "%" + ")";

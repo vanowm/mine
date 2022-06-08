@@ -158,6 +158,9 @@ if (isset($_GET['c']))
           <td>Flags:</td><td id="stats_flags" class="digit"></td><td class="extra" colspan="2"></td>
         </tr>
         <tr>
+          <td>Questions:</td><td id="stats_questions" class="digit"></td><td class="extra" colspan="2"></td>
+        </tr>
+        <tr>
           <td>Best Time:</td><td id="stats_best" class="clock digit"><span data-time="d"></span><span data-time="h">00</span><span data-time="m">00</span><span data-time="s">00</span><span data-time="ms">000</span></td><td class="extra" colspan="2"></td>
         </tr>
         <tr>
@@ -189,6 +192,9 @@ if (isset($_GET['c']))
         </tr>
         <tr>
           <td>Flags:</td><td id="stats_all_flags" class="digit"></td><td class="extra" colspan="2"></td>
+        </tr>
+        <tr>
+          <td>Questions:</td><td id="stats_all_questions" class="digit"></td><td class="extra" colspan="2"></td>
         </tr>
         <tr>
           <td>Best Time:</td><td id="stats_all_best" class="clock digit"><span data-time="d"></span><span data-time="h">00</span><span data-time="m">00</span><span data-time="s">00</span><span data-time="ms">000</span></td><td class="extra" colspan="2"></td>
