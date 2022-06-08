@@ -576,6 +576,10 @@ body:not([data-state="pause"]) #table > *[data-step][data-type="9"]:not(.flag)::
   background-color: var(--background-color-header);
 }
 
+body[data-state="start"] .statsBoardBox .clear
+{
+  visibility: hidden;
+}
 .statsBoardBox .clear
 {
   width: 0;
@@ -589,7 +593,7 @@ body:not([data-state="pause"]) #table > *[data-step][data-type="9"]:not(.flag)::
 }
 .statsBoardBox .clear::before
 {
-  content: "X";
+  content: ".";
   cursor: pointer;
   /* width: 2em; */
   /* padding: 0.2em; */
