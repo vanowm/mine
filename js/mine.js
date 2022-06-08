@@ -45,6 +45,8 @@
         OPEN = 16,
         SHOW = 32,
         FLAG = 64,
+        QUESTION = 128,
+        MAX = QUESTION,
         TYPE = OPEN - 1,
         WIN = 1,
         LOOSE = 2,
@@ -59,7 +61,6 @@
         OFFSET = [-1,-1,0,-1,1,-1,1,0,1,1,0,1,-1,1,-1,0], //offset around current coordinate
         BORDERS = ["top", "right", "bottom", "left"],
         anim = {
-          clock: [],
           blink: 0,
           shake: 0,
           shakeEl: document.body,
@@ -147,7 +148,7 @@
               {
                 if (key == "mines" && prop == "max")
                 {
-                  target[key][prop] = target.width.value * target.height.value - 1;
+                  target[key][prop] = target.width.value * target.height.value - 2;
                 }
                 obj[key] = target[key][prop];
                 return obj;
@@ -215,6 +216,7 @@
   
           clear(target)
           {
+
             localStorage.removeItem("mineSettings");
             this.init(target);
           },
@@ -308,10 +310,19 @@
             return JSON.parse(localStorage.getItem("mineStats")) || {};
           },
   
-          clear(target)
+          clear(target, board)
           {
-            localStorage.removeItem("mineStats");
+            if (board)
+            {
+              delete target[board];
+            }
+            else
+            {
+              target = {};
+            }
+            this.save(target);
             this.init(target);
+            this.show(target);
           },
 
           save(target)
@@ -340,13 +351,12 @@
               let val = ~~obj[i];
               if (["time", "best", "worst"].includes(i))
               {
-                showClock(el, val, [], true);
+                showClock(el, val, true);
                 el.dataset.size = obj && obj[i+"Size"] || "";
                 if (el.dataset.size)
-                {
                   el.dataset.size = el.dataset.size.split(",").reduce((ret, val, i) => ret += val + boardSizeText[i], "");
-                  el.parentNode.lastElementChild.textContent = el.dataset.size ? "(" + el.dataset.size + ")" : "";
-                }
+
+                el.parentNode.lastElementChild.textContent = el.dataset.size ? "(" + el.dataset.size + ")" : "";
                 continue;
               }
               showDigits(el, val);
@@ -419,11 +429,11 @@
                         isFlag = steps[i] & 1;
 
                   if (isFlag)
-                    data.flags += (flagsSet[index] === undefined) ? 1 : -1;
+                    data.flags += (flagsSet[index] % 2) ? -1 : 1;
                   else
                     data.clicked++;
 
-                  flagsSet[index] = 1;
+                  flagsSet[index] = ~~flagsSet[index] + 1;
 
                 }
                 if (game[STATS_RESULT])
@@ -645,7 +655,8 @@
             list[id].currentTime = 0;
             list[id].play().catch(er => console.error(id, er));
           };
-        })();
+        })(),
+        showPrev = new Map();
 
   delete window.mineTemp;
   let timerTimeout,
@@ -658,6 +669,7 @@
   {
     get() {return this[~~SETTINGS.flagRequire];}
   });
+
   SETTINGS.init();
   STATS.init();
   setZoom();
@@ -673,6 +685,13 @@
     init(true);
   });
 
+  EL.all['.statsBoard .clear'].forEach(el =>
+  {
+    el.addEventListener("click", e =>
+    {
+      STATS.clear(e.target.classList.contains("board") ? [SETTINGS.width,SETTINGS.height,SETTINGS.mines] : undefined);
+    });
+  });
   function setOptions(opts)
   {
     if (opts === undefined)
@@ -1038,16 +1057,19 @@
       return;
   
     const index = Array.from(EL.table.children).indexOf(e.target),
-          leftClick = SETTINGS.click ? e.type != "click" : e.type == "click";
+          leftClick = SETTINGS.click ? e.type != "click" : e.type == "click",
+          table = SETTINGS.table;
   
-    let val = SETTINGS.table[index];
-    if ((leftClick && (val & OPEN || val & FLAG || val & SHOW)) || (!leftClick && val & OPEN))
+    let val = table[index];
+    if ((leftClick && (val & OPEN || val & FLAG || val & SHOW || val & QUESTION)) || (!leftClick && val & OPEN) || (!leftClick && !SETTINGS.stats.start))
       return;
   
-    SETTINGS.stats.steps[SETTINGS.stats.steps.length] = (index << 1) | !leftClick; //set bit1 = flag
-  
     if (!SETTINGS.stats.start)
+    {
+      init(index);
       timer();
+    }
+    SETTINGS.stats.steps[SETTINGS.stats.steps.length] = (index << 1) | !leftClick; //set bit1 = flag
 
     setState();
 
@@ -1073,14 +1095,31 @@
     }
     else
     {
-      SETTINGS.table[index] ^= FLAG;
-      audio("flag" + (SETTINGS.table[index] & FLAG ? "" : "off"));
+      let type = FLAG;
+      if (table[index] & FLAG)
+      {
+        type = QUESTION;
+        table[index] &= ~FLAG;
+      }
+      else if (table[index] & QUESTION)
+      {
+        type = 0;
+        table[index] &= ~QUESTION;
+      }
+      else
+      {
+        type = FLAG;
+      }
 
-      e.target.dataset.type = FLAG;
-      SETTINGS.stats.mines += val & FLAG ? -1 : 1;
+      table[index] |= type;
+
+      audio("flag" + (type & FLAG ? "" : "off"));
+
+      e.target.dataset.type = type;
+      SETTINGS.stats.mines += val & FLAG ? -1 : val & QUESTION ? 0 : 1;
     }
   
-    if (!(SETTINGS.table[index] & OPEN + FLAG))
+    if (!(table[index] & OPEN + FLAG + QUESTION))
       delete e.target.dataset.type;
   
     if (isWon())
@@ -1143,7 +1182,7 @@ console.log("finished", won);
     for(let i = 0; i < table.length; i++)
     {
       const elCell = EL.table.children[i];
-      if (table[i] & OPEN+FLAG)
+      if (table[i] & OPEN+FLAG+QUESTION)
       {
         elCell.classList.add("opened");
       }
@@ -1159,7 +1198,10 @@ console.log("finished", won);
         elCell.classList.add("shown");
         elCell.dataset.type = type;
         if (won)
+        {
           table[i] |= FLAG;
+          table[i] &= ~QUESTION;
+        }
 
         if (table[i] & FLAG)
           mines++;
@@ -1167,6 +1209,9 @@ console.log("finished", won);
       // animation(elCell, type);
       if (table[i] & FLAG)
         elCell.classList.add("flag");
+
+      if (table[i] & QUESTION)
+        elCell.classList.add("question");
   
       const pos = steps.reduce((a, v, n) =>
       {
@@ -1209,6 +1254,7 @@ console.log("finished", won);
             type = val & TYPE,
             isMine = type == MINE,
             isFlag = val & FLAG,
+            isQuestion = val & QUESTION,
             isOpen = val & OPEN,
             isShow = val & SHOW;
   
@@ -1233,6 +1279,7 @@ console.log("finished", won);
             type = val & TYPE,
             isOpen = val & OPEN,
             isFlag = val & FLAG,
+            isQuestion = val & QUESTION,
             isMine = type == MINE;
   
       if (val & SHOW || (isMine && isOpen) || (flagRequire && isMine && !isFlag))// || !((type != MINE && val & OPEN) || (type == MINE && val & FLAG)))
@@ -1267,9 +1314,10 @@ console.log("finished", won);
       if (SETTINGS.stats.start)
         SETTINGS.stats.time = new Date().getTime() - SETTINGS.stats.start;
 
-      const time = showClock(EL.clock, SETTINGS.stats.time, anim.clock);
-      showDigits(EL.minesFound, SETTINGS.stats.mines);
-      showDigits(EL.minesPercent, Math.round(SETTINGS.stats.mines * 100 / SETTINGS.mines));
+      const time = showClock(EL.clock, SETTINGS.stats.time, true);
+      showDigits(EL.minesFound, SETTINGS.mines - SETTINGS.stats.mines);
+//      showDigits(EL.minesPercent, Math.round(SETTINGS.stats.mines * 100 / SETTINGS.mines));
+      showDigits(EL.gamePercent, Math.round(SETTINGS.stats.open * 100 / (SETTINGS.table.length - SETTINGS.mines)));
       showDigits(EL.steps, SETTINGS.stats.steps.length);
       EL.clock.classList.toggle("blink", time.ms > 500);
     }
@@ -1294,30 +1342,35 @@ console.log("finished", won);
     requestAnimationFrame(timer);
   }
   
-  function showClock(el, time, prev = [], minimum = false)
+  function showClock(el, time, minimum = false)
   {
+    const prev = showPrev.get(el) || [];
+    if (!prev.length)
+      showPrev.set(el, prev);
+
+
     time = getTimeData(time).string;//.split(/[:.]/);
 
     for(let i = 0, val, hide = minimum; i < el.children.length; i++)
     {
       val = time[el.children[i].dataset.time];
-      if (prev[i] != val)
+      if (hide && i < 4)
       {
-        prev[i] = val;
-        if (val && val != "00")
-        {
-          if (hide)
-            val = val.replace(/^0/, "");
+        val = val.replace(/^0/, "");
+
+        if ((val && !val.match(/^0+$/)) || i > 3)
           hide = false;
-        }
+
+      }
+      if (prev[i] !== val)
+      {
         showDigits(el.children[i], val);
-  
         el.children[i].classList.toggle("hidden", i < 3 && hide);
+        prev[i] = val;
       }
     }
     return time;
   }
-
   function getTime(time, minimum = false)
   {
     const t = getTimeData(time);
@@ -1329,7 +1382,7 @@ console.log("finished", won);
     return minimum ? ret.replace(/^(00:)+/, "") : ret;
   }
   
-  function getTimeData(time, string)
+  function getTimeData(time)
   {
     let sec = ~~(time / 1000);
     const ms = time % 1000,
@@ -1467,7 +1520,7 @@ console.log("finished", won);
           const i = getIndexOffset(index, offset[o][0], offset[o][1]),
                 val = table[i];
 
-          if (!(val === undefined || val == MINE || val & FLAG || table[i] & OPEN))
+          if (!(val === undefined || val == MINE || val & FLAG || val & QUESTION || table[i] & OPEN))
           {
             array.push(i);
           }
@@ -1477,7 +1530,6 @@ console.log("finished", won);
     }
     // if (show)
     //   settings.table = table;
-
     return ret;
   }
   // function openCell_(index, table)
@@ -1557,6 +1609,11 @@ console.log("finished", won);
   
   function init(reset = false, checkPause = true)
   {
+    const index = typeof reset == "number" ? reset : -1;
+
+    if (typeof reset == "number")
+      reset = false;
+
     if (checkPause)
       SETTINGS.stats.started = 0;
 
@@ -1566,17 +1623,17 @@ console.log("finished", won);
     document.body.classList.remove("finished");
     document.body.classList.remove("won");
     SETTINGS.stats.timestamp = 0;
-    let opened = false;
-    for(let i = 0, mask = OPEN + FLAG; i < SETTINGS.table.length; i++)
-    {
-      if (SETTINGS.table[i] & mask)
-      {
-        opened = true;
-        break;
-      }
-    }
-    if(!opened)
-      reset = true;
+    // let opened = false;
+    // for(let i = 0, mask = OPEN + FLAG; i < SETTINGS.table.length; i++)
+    // {
+    //   if (SETTINGS.table[i] & mask)
+    //   {
+    //     opened = true;
+    //     break;
+    //   }
+    // }
+    // if(!opened)
+    //   reset = true;
   
     if (reset)
     {
@@ -1587,15 +1644,29 @@ console.log("finished", won);
       SETTINGS.table.length = 0; //reset
     }
     SETTINGS.table.length = SETTINGS.width * SETTINGS.height;
-    if (reset)
+    if (index > -1)
     {
-      const max = Math.min(SETTINGS.mines, SETTINGS.table.length - 1);
-      let mines = 0;
-  
+      const max = Math.min(SETTINGS.mines, SETTINGS.table.length - 2);
+      let mines = 0,
+          indexes = OFFSET.reduce((ret, o, i)=>
+          {
+            if (i % 2)
+            {
+              const i = getIndexOffset(index, ret[ret.length-1], o);
+              if (i < 0)
+                return ret.length--, ret;
+
+              ret[ret.length-1] = i;
+            }
+            else
+              ret[ret.length] = o;
+            return ret;
+          }, [index]);
+
       while(mines < max)
       {
         const mine = rand(0, SETTINGS.table.length-1);
-        if (!SETTINGS.table[mine])
+        if (!indexes.includes(mine) && !SETTINGS.table[mine])
         {
           mines++;
           SETTINGS.table[mine] = MINE;
@@ -1637,7 +1708,7 @@ console.log("finished", won);
       {
         delete elCell.dataset.type;
       }
-      if (reset)
+      if (index > -1)
       {
         let minesNum = 0;
         if (item != MINE)
@@ -1676,6 +1747,14 @@ console.log("finished", won);
           flags++;
           started = true;
         }
+        if(item & QUESTION)
+        {
+          if (!paused)
+            elCell.dataset.type = QUESTION;
+
+          started = true;
+        }
+
       }
       if ((table[i] & TYPE) == MINE)
         mines++;
@@ -1732,7 +1811,7 @@ console.log("finished", won);
     // for(let i = 0; i < settings.height; i++)
     //   console.log(settings.table.slice(i * settings.width, i * settings.width + settings.width));
     
-    showDigits(EL.minesTotal, SETTINGS.mines);
+    // showDigits(EL.minesTotal, SETTINGS.mines);
 
     SETTINGS.save(); //save settings
     timer(0);
@@ -1769,10 +1848,11 @@ console.log("finished", won);
   
     }
     perfect[1] += mines;
-    showDigits(EL.perfect, perfect.val);
+
     board && board.update();
     if (checkPause)
     {
+      showDigits(EL.perfect, index == -1 && !started ? 0 : perfect.val);
       pause(SETTINGS.stats.pauseTime);
       if (!finish)
         STATS.show();
@@ -1844,7 +1924,7 @@ console.log("finished", won);
   function encode(val)
   {
     const r = [],
-          bits = Math.log2(FLAG) + 1,
+          bits = Math.log2(MAX) + 1,
           max = ~~(32 / bits);
   
     for(let i = 0; i < val.length; i+=max)
@@ -1864,9 +1944,9 @@ console.log("finished", won);
   {
     val = val.split("\xad");
     let r = [],
-        bits = Math.log2(FLAG) + 1,
+        bits = Math.log2(MAX) + 1,
         max = ~~(32 / bits),
-        mask = (FLAG << 1) - 1;
+        mask = (MAX << 1) - 1;
   
     for(let i = 0; i < val.length; i++)
     {

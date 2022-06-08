@@ -99,13 +99,16 @@
   <main>
     <div class="stats">
       <div>
-        <span>
+        <span class="clock">
           <span>Time:</span><span id="clock" class="digit clock"><span data-time="d"></span><span data-time="h">00</span><span data-time="m">00</span><span data-time="s">00</span><span data-time="ms">000</span></span>
         </span>
-        <span>
-          <span>Mines:</span><span><span id="minesFound" class="digit">0</span>/<span id="minesTotal" class="digit">0</span>(<span id="minesPercent" class="digit">0</span>%)</span>
+        <span class="game">
+          <span>Game:</span><span><span id="gamePercent" class="digit">0</span>%<!--/<span id="minesTotal" class="digit">0</span>--></span>
         </span>
-        <span>
+        <span class="mines">
+          <span>Mines:</span><span><span id="minesFound" class="digit">0</span><!--/<span id="minesTotal" class="digit">0</span>--></span>
+        </span>
+        <span class="steps">
           <span>Steps:</span><span><span id="steps" class="digit">0</span><span title="Minimum possible">(<span id="perfect" class="digit"></span>)</span></span>
         </span>
       </div>
@@ -129,69 +132,69 @@ if (isset($_GET['c']))
   <footer>
     <div class="statsBoard">
       <table class="statsBoardBox">
-        <tr><th colspan="3">This Board</th></tr>
+        <tr><th colspan="4">This Board</th><td class="clear board"></td></tr>
         <tr>
-          <td>Games:</td><td id="stats_games" class="digit"></td><td class="extra"></td>
+          <td>Games:</td><td id="stats_games" class="digit"></td><td class="extra" colspan="2"></td>
         </tr>
         <tr>
-          <td>Wins:</td><td id="stats_wins" class="digit"></td><td class="extra"></td>
+          <td>Wins:</td><td id="stats_wins" class="digit"></td><td class="extra" colspan="2"></td>
         </tr>
         <tr>
-          <td>Loses:</td><td id="stats_loses" class="digit"></td><td class="extra"></td>
+          <td>Loses:</td><td id="stats_loses" class="digit"></td><td class="extra" colspan="2"></td>
         </tr>
         <tr>
-          <td>Perfect game:</td><td id="stats_perfect" class="digit"></td><td class="extra"></td>
+          <td>Perfect games:</td><td id="stats_perfect" class="digit"></td><td class="extra" colspan="2"></td>
         </tr>
         <tr>
-          <td>Time:</td><td id="stats_time" class="clock digit"><span data-time="d"></span><span data-time="h">00</span><span data-time="m">00</span><span data-time="s">00</span><span data-time="ms">000</span></td><td class="extra"></td>
+          <td>Time:</td><td id="stats_time" class="clock digit"><span data-time="d"></span><span data-time="h">00</span><span data-time="m">00</span><span data-time="s">00</span><span data-time="ms">000</span></td><td class="extra" colspan="2"></td>
         </tr>
         <tr>
-          <td>Steps:</td><td id="stats_steps" class="digit"></td><td class="extra"></td>
+          <td>Steps:</td><td id="stats_steps" class="digit"></td><td class="extra" colspan="2"></td>
         </tr>
         <tr>
-          <td>Opened:</td><td id="stats_clicked" class="digit"></td><td class="extra"></td>
+          <td>Opened:</td><td id="stats_clicked" class="digit"></td><td class="extra" colspan="2"></td>
         </tr>
         <tr>
-          <td>Flags:</td><td id="stats_flags" class="digit"></td><td class="extra"></td>
+          <td>Flags:</td><td id="stats_flags" class="digit"></td><td class="extra" colspan="2"></td>
         </tr>
         <tr>
-          <td>Best Time:</td><td id="stats_best" class="clock digit"><span data-time="d"></span><span data-time="h">00</span><span data-time="m">00</span><span data-time="s">00</span><span data-time="ms">000</span></td><td class="extra"></td>
+          <td>Best Time:</td><td id="stats_best" class="clock digit"><span data-time="d"></span><span data-time="h">00</span><span data-time="m">00</span><span data-time="s">00</span><span data-time="ms">000</span></td><td class="extra" colspan="2"></td>
         </tr>
         <tr>
-          <td>Worst Time:</td><td id="stats_worst" class="clock digit"><span data-time="d"></span><span data-time="h">00</span><span data-time="m">00</span><span data-time="s">00</span><span data-time="ms">000</span></td><td class="extra"></td>
+          <td>Worst Time:</td><td id="stats_worst" class="clock digit"><span data-time="d"></span><span data-time="h">00</span><span data-time="m">00</span><span data-time="s">00</span><span data-time="ms">000</span></td><td class="extra" colspan="2"></td>
         </tr>
       </table>
       <table class="statsBoardBox">
-        <tr><th colspan="3">Total</th></tr>
+        <tr><th colspan="4">Total</th><td class="clear"></td></tr>
         <tr>
-          <td>Games:</td><td id="stats_all_games" class="digit"></td><td class="extra"></td>
+          <td>Games:</td><td id="stats_all_games" class="digit"></td><td class="extra" colspan="2"></td>
         </tr>
         <tr>
-          <td>Wins:</td><td id="stats_all_wins" class="digit"></td><td class="extra"></td>
+          <td>Wins:</td><td id="stats_all_wins" class="digit"></td><td class="extra" colspan="2"></td>
         </tr>
         <tr>
-          <td>Loses:</td><td id="stats_all_loses" class="digit"></td><td class="extra"></td>
+          <td>Loses:</td><td id="stats_all_loses" class="digit"></td><td class="extra" colspan="2"></td>
         </tr>
         <tr>
-          <td>Perfect:</td><td id="stats_all_perfect" class="digit"></td><td class="extra"></td>
+          <td>Perfect games:</td><td id="stats_all_perfect" class="digit"></td><td class="extra" colspan="2"></td>
         </tr>
         <tr>
-          <td>Time:</td><td id="stats_all_time" class="clock digit"><span data-time="d"></span><span data-time="h">00</span><span data-time="m">00</span><span data-time="s">00</span><span data-time="ms">000</span></td><td class="extra"></td>
+          <td>Time:</td><td id="stats_all_time" class="clock digit"><span data-time="d"></span><span data-time="h">00</span><span data-time="m">00</span><span data-time="s">00</span><span data-time="ms">000</span></td><td class="extra" colspan="2"></td>
         </tr>
         <tr>
-          <td>Steps:</td><td id="stats_all_steps" class="digit"></td><td class="extra"></td>
+          <td>Steps:</td><td id="stats_all_steps" class="digit"></td><td class="extra" colspan="2"></td>
         </tr>
         <tr>
-          <td>Opened:</td><td id="stats_all_clicked" class="digit"></td><td class="extra"></td>
+          <td>Opened:</td><td id="stats_all_clicked" class="digit"></td><td class="extra" colspan="2"></td>
         </tr>
         <tr>
-          <td>Flags:</td><td id="stats_all_flags" class="digit"></td><td class="extra"></td>
+          <td>Flags:</td><td id="stats_all_flags" class="digit"></td><td class="extra" colspan="2"></td>
         </tr>
         <tr>
-          <td>Best Time:</td><td id="stats_all_best" class="clock digit"><span data-time="d"></span><span data-time="h">00</span><span data-time="m">00</span><span data-time="s">00</span><span data-time="ms">000</span></td><td class="extra"></td>
+          <td>Best Time:</td><td id="stats_all_best" class="clock digit"><span data-time="d"></span><span data-time="h">00</span><span data-time="m">00</span><span data-time="s">00</span><span data-time="ms">000</span></td><td class="extra" colspan="2"></td>
         </tr>
         <tr>
-          <td>Worst Time:</td><td id="stats_all_worst" class="clock digit"><span data-time="d"></span><span data-time="h">00</span><span data-time="m">00</span><span data-time="s">00</span><span data-time="ms">000</span></td><td class="extra"></td>
+          <td>Worst Time:</td><td id="stats_all_worst" class="clock digit"><span data-time="d"></span><span data-time="h">00</span><span data-time="m">00</span><span data-time="s">00</span><span data-time="ms">000</span></td><td class="extra" colspan="2"></td>
         </tr>
       </table>
     </div>
