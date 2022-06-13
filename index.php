@@ -4,7 +4,6 @@
   <meta http-equiv="content-type" content="text/html; charset=UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=0">
   <title>Mine'er'ish</title>
-  <link rel="stylesheet" media="screen" href="<?=getfile("css/font.css")?>">
   <link rel="stylesheet" media="screen" href="<?=getfile("css/mine.css")?>">
   <script type="text/javascript">
     window.mineTemp = {
@@ -39,13 +38,21 @@
               <select id="width"></select> x <select id="height"></select>
             </span>
           </div>
-          <div>
-            <span>Mines:</span>
-            <span>
-              <select id="mines"></select>
-              <span id="menuDifficulty"></span>
-            </span>
-          </div>
+          <table>
+            <tr>
+              <td>⛯ Mines:</td>
+              <td>
+                <select id="mines"></select>
+              </td>
+              <td id="menuDifficulty" rowspan="2"></td>
+            </tr>
+            <tr>
+              <td>☁ Rocks:</td>
+              <td>
+                <select id="rocks"></select>
+              </td>
+            </tr>
+          </table>
           <div>
             <label title="Must mark all mines with flag?"><input id="flagRequire" type="checkbox"><span>Flags require</span></label>
           </div>
@@ -53,18 +60,10 @@
             <label title="Sound effects"><input id="audio" type="checkbox"><span>Sound</span></label>
           </div>
           <div>
-            <label title="Pre-open for medium and above difficulties"><input id="openFirst" type="checkbox"><span>Pre-open</span></label>
-          </div>
-          <div>
             <label title="Show steps when finished"><input id="showSteps" type="checkbox"><span>Show steps</span></label>
           </div>
           <div>
-            <span>Primary action</span>
-              <span>
-                <select id="click"></select>
-              </span>
-            </span>
-            <!-- <label title="Primary action"><input id="click" type="checkbox"><span>Primary action = open</span></label> -->
+            <label title="Third right click = question mark"><input id="questionMark" type="checkbox"><span>Enable question mark</span></label>
           </div>
           <div>
             <label title="Monochrome mode"><input id="monochrome" type="checkbox"><span>Monochrome</span></label>

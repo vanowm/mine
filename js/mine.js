@@ -42,6 +42,7 @@
           }
         }),
         MINE = 9,
+        ROCK = 10,
         OPEN = 16,
         SHOW = 32,
         FLAG = 64,
@@ -55,9 +56,10 @@
         STATE_PAUSED = 2,
         STATS_RESULT = 0, /* flags saved in steps, bit 1 = flag */
         STATS_TIME = 1,
-        STATS_MINES = 2,
-        STATS_STEPS = 3,
-        STATS_PERFECT = 4,
+        STATS_STEPS = 2,
+        STATS_PERFECT = 3,
+        STATS_MINES = 4,
+        STATS_ROCKS = 5,
         OFFSET = [-1,-1,0,-1,1,-1,1,0,1,1,0,1,-1,1,-1,0], //offset around current coordinate
         BORDERS = ["top", "right", "bottom", "left"],
         anim = {
@@ -75,40 +77,43 @@
           },
         },
         tableBox = EL.table.parentNode.parentNode.parentNode,
-        presets = {/* [ width, height, mines ] */
-          "Can't loose": [9,9,2],
-          "Don't wanna think": [9,9,5],
-          "Super easy": [9,9,8],
-          "Easy": [16,16,29],
-          "Normal": [16,16,38],
-          "Medium": [30,16,88],
-          "Hard": [30,16,106],
-          "Very hard": [30,30,231],
-          "I can do this!": [30,30,264],
-          "I'll try it anyway": [30,30,297],
-          "Impossible": [30,30,330],
-          "Gotta buy a lottery": [30,30,363],
+        ID = ["width", "height", "mines", "rocks"],
+        rockDifficulty = 1.2,
+        difficultyMultiplier = 2,
+        PRESETS = {/* [ width, height, mines ] */
+          "Can't loose": [9,9,2,0],
+          "Don't wanna think": [9,9,5,0],
+          "Super easy": [9,9,7,2],
+          "Easy": [16,16,25,0],
+          "Normal": [16,16,32,0],
+          "Medium": [16,16,37,5],
+          "Hard": [30,16,90,0],
+          "Very hard": [30,16,90,9],
+          // "I can do this!": [30,30,264,0],
+          // "I'll try it anyway": [30,30,200,49],
+          "Impossible": [30,30,213,6],
+          // "Gotta buy a lottery": [30,30,363,0],
         },
-        difficultyCheat = 18,
         SETTINGS = new Proxy(
         {
-          width: {default: 16, value: 16, min: 2, max: 100, resetBoard: true},
-          height: {default: 16, value: 16, min: 2, max: 100, resetBoard: true},
-          mines: {default: 38, value: 38, min: 1, max: 9998, resetBoard: true},
+          width: {default: 16, value: 16, min: 9, max: 100, resetBoard: true},
+          height: {default: 16, value: 16, min: 9, max: 100, resetBoard: true},
+          mines: {default: 38, value: 38, min: 2, max: 9998, resetBoard: true},
+          rocks: {default: 0, value: 0, min: 0, max: 9998, resetBoard: true},
           zoom: {default: 12, value: 12, min: 1, max: 70},
-          click: {default: 0, value: 0, min: 0, max: 1, map:["Open", "Flag"]},
-          openFirst: {default: false, value: false}, //pre-open empty section before the game if difficulty less than this
+          questionMark: {default: true, value: true},
           darkMode: {default: 0, value: 0, min: 0, max: 2},
           table: {default: [], value: []},
           animation: {default: 10, value: 10, min: 0, max: 20, onChange: val => animations.steps(val), map:["None"]},
           monochrome: {default: false, value: false},
           audio: {default: true, value: true},
           showSteps: {default: true, value: true},
-          flagRequire: {default: false, value: false, onChange: val => !gameStatus && showDigits(EL.perfect, perfect.val)},
+          flagRequire: {default: false, value: false, onChange: val => !gameStatus && SETTINGS.stats.time && showDigits(EL.perfect, perfect.val)},
           stats: {
             start: 0,
             started: 0,
             mines: 0,
+            rocks: 0,
             time: 0,
             timestamp: 0,
             open: 0,
@@ -146,9 +151,9 @@
             {
               return Object.keys(target).reduce((obj, key) => 
               {
-                if (key == "mines" && prop == "max")
+                if ((key == "mines" || key == "rocks") && prop == "max")
                 {
-                  target[key][prop] = target.width.value * target.height.value - 2;
+                  target[key][prop] = this.getMax(target, key);
                 }
                 obj[key] = target[key][prop];
                 return obj;
@@ -157,10 +162,15 @@
             return target[prop] && (target[prop].value === undefined ? target[prop] : target[prop].value);
           }, //get()
   
+          getMax(target, prop)
+          {
+            return (target[prop].max = Math.max(0, target.width.value * target.height.value - (prop == "rocks" ? target.mines.value * rockDifficulty + 2 : 2)));
+          },
+
           set(target, prop, value, proxy)
           {
+            let v = value;
             value = this.check(target, prop, value);
-  
             if (value === undefined)
               return;
   
@@ -168,6 +178,11 @@
             if (target[prop].onChange instanceof Function)
               target[prop].onChange(value);
   
+            if (prop == "width" || prop == "height")
+            {
+              this.getMax(target, "mines");
+              this.getMax(target, "rocks");
+            }
             return this.save(target);
           }, //set()
   
@@ -275,11 +290,11 @@
                   return (args) => value.call(this, target, args);
 
               }
-              const stats = this._stats[[SETTINGS.width,SETTINGS.height,SETTINGS.mines]];
+              const stats = this._stats[this.id()];
               if (stats && stats[prop] !== undefined)
                 return stats[prop];
 
-              if ((prop.constructor !== Symbol) && (""+prop).match(/[0-9]+,[0-9]+,[0-9]+/))
+              if ((prop.constructor !== Symbol) && (""+prop).match(/[0-9]+,[0-9]+,[0-9]+,[0-9]+/))
                 target[prop] = {};
             }
             return target[prop];
@@ -345,11 +360,11 @@
           show(target, obj)
           {
             if (obj === undefined)
-              obj = this._stats[[SETTINGS.width, SETTINGS.height, SETTINGS.mines]] || {};
+              obj = this._stats[this.id()] || {};
 
             const isAll = obj === this._stats.all,
                   pref = "stats_" + (isAll ? "all_" : ""),
-                  boardSizeText = ["x", "@", " mines"];
+                  boardSizeText = ["x", "⛯", "☁", ""];
 
             for(let i in this._stats.all)
             {
@@ -396,6 +411,20 @@
               this.show(target, this._stats.all);
           },
           _stats: {},
+          id(target, value)
+          {
+            const ret = [];
+            if (value === undefined)
+              value = SETTINGS;
+            else
+              value = SETTINGS[value];
+
+            for(let i = 0; i < ID.length; i++)
+            {
+              ret[ret.length] = value[ID[i]];
+            }
+            return ""+ret;
+          },
           get stats()
           {
             const {handler, target} = this,
@@ -492,7 +521,7 @@
             return handler._stats;
           },
 
-          list(target, value = [SETTINGS.width,SETTINGS.height,SETTINGS.mines])
+          list(target, value = this.id())
           {
             return this.get(target, value);
           },
@@ -501,161 +530,262 @@
 
         animations = (()=>
         {
-          const list = new Map();
+          const workers = new Map(),
+                WORKER_URL = URL.createObjectURL(new Blob(["(" + (() =>
+                {
+const pref = {},
+      array = [],
+      closeTimer = (t = 60000) => closeTimer.timer = setTimeout(commands.close, t);
+      commands = {
+        start: (() => 
+        {
+          pref.status = 1,
+          this.postMessage({pref});
+          loop();
+        }).bind(this),
+        stop: (() =>
+        {
+          pref.status = 0;
+          this.postMessage({array, pref});
+          closeTimer();
+          return (array.length = 0);
+        }).bind(this),
+        pause: (() =>
+        {
+          pref.status = 2;
+          this.postMessage({pref});
+        }).bind(this),
+        close: (() =>
+        {
+          pref.status = -1;
+          this.postMessage({pref});
+        }).bind(this)
+      };
+
+let prevRet = ""+array;
+
+this.addEventListener("message", e =>
+{
+  const data = e.data;
+  for(let i in data)
+  {
+    switch(i)
+    {
+      case "index":
+        array[array.length] = data[i];
+        break;
+      case "pref":
+        for(let o in data[i])
+          pref[o] = data[i][o];
+        break;
+      case "command":
+        if (commands[data[i]] instanceof Function)
+          commands[data[i]](data.args);
+        break;
+    }
+  }
+});
+
+
+const loop = (timestamp = performance.now()) =>
+{
+  if (!pref.status)
+    return;
+
+  clearTimeout(closeTimer.timer);
+  setTimeout(loop);
+
+  if (pref.status != 1 || (pref.steps && timestamp - pref.timer < pref.speed - pref.steps))
+    return;
+
+  if (timestamp && !pref.steps)
+    return commands.stop();
+
+  if (pref.delay && pref.timer == -1)
+  {
+    pref.timer = timestamp + pref.delay - pref.speed - pref.steps;
+    return;
+  }
+  const ret = {array: [], pref};
+  for (let i = 0, max = Math.min(pref.steps, array.length); i < max; i++)
+  {
+    if (!array.length)
+      break;
+
+    ret.array[ret.array.length] = array.shift();
+  }
+  pref.timer = timestamp;
+  if (prevRet === ""+ret.array)
+    return;
+
+  this.postMessage(ret);
+  prevRet = "" + ret.array;
+};
+closeTimer();
+
+                }).toString() + ")()"], { type: "text/javascript" }));
           class Animation
           {
             constructor(opt = {})
             {
-              let info = list.get(this) || {
-                          id: list.size,
-                          date: new Date()
-                        };
-
-              list.set(this, info);
-              this.worker =  new Worker(URL.createObjectURL(new Blob(["const opts = {};(" + (() =>
-              {
-                const array = [];
-                let status = 0;
-
-                const commands = {
-                  start: () => status = 1,
-                  stop: (() =>
-                  {
-                    status = 0;
-                    this.postMessage({array, last: true});
-                    return (array.length = 0);
-                  }).bind(this),
-                  pause: () => status = 2,
-                };
-                this.addEventListener("message", e =>
-                {
-                  const data = e.data;
-                  for(let i in data)
-                  {
-                    switch(i)
-                    {
-                      case "index":
-                        array[array.length] = data[i];
-                        break;
-                      case "opt":
-                        for(let o in data[i])
-                          opts[o] = data[i][o];
-                        break;
-                      case "command":
-                        if (commands[data[i]] instanceof Function)
-                          commands[data[i]](data.args);
-                        break;
-                    }
-                  }
-                });
-                let timer = 0,
-                    prevRet = ""+array;
-              
-                const loop = timestamp =>
-                {
-                  const {speed, steps, delay} = opts;
-                  requestAnimationFrame(loop);
-                  if (status != 1 || (steps && timestamp - timer < speed-steps))
-                    return;
-
-                  if (timestamp && !steps)
-                    return commands.stop();
-
-                  if (delay && !timer)
-                  {
-                    timer = timestamp + delay - speed - steps;
-                    return;
-                  }
-                  const ret = {array: [], last: false};
-                  for (let i = 0, max = Math.min(steps, array.length); i < max; i++)
-                  {
-                    if (!array.length)
-                      break;
-              
-                    ret.array[ret.array.length] = array.shift();
-                  }
-                  timer = timestamp;
-                  if (prevRet === ""+ret.array)
-                    return;
-
-                  this.postMessage(ret);
-                  prevRet = "" + ret.array;
-                };
-                loop();
-              }).toString() + ")()"], { type: "text/javascript" })));
               let prevCell = document.createElement("div");
-              this.worker.addEventListener("message", e =>
+              this.pref = {};
+              let i = workers.size,
+                  now = new Date();
+              for(let [_this, _pref] of workers)
               {
-                info.date = new Date();
-                this.list.set(this, info);
+                let that = _this;
+                if (now - _this.date > 60000)
+                  this.delete(_this);
+
+                if (!_this.status && !this.worker)
+                {
+                  this.worker = _this.worker;
+                  this.pref = _pref;
+                  that = this;
+                }
+                //replace old workers with new
+                workers.delete(_this);
+                workers.set(that, _pref);
+                if (!--i)
+                  break;
+              }
+              if (!this.worker)
+              {
+                this.worker =  new Worker(WORKER_URL);
+                this.id = workers.size;
+              }
+              this.worker.onerror = e => console.error(e);
+              this.worker.onmessage =  e =>
+              {
+// console.log("onMessage", e.data);
+                const {array, pref} = e.data;
+                Object.assign(this.pref, pref);
+                if (this.pref.status == -1)
+                {
+                  if (workers.size > 1)
+                    return this.delete();
+                }
+                this.date = new Date();
                 if (!SETTINGS.stats.started)
                   return;
             
-                const {array, last} = e.data;
-                for(let i = 0; i < array.length; i++)
+                if (array !== undefined)
                 {
-                  const elCell = showCell(array[i]);
-                  elCell.classList.add("active");
-                  prevCell.classList.remove("active");
-                  prevCell = elCell;
+                  for(let i = 0; i < array.length; i++)
+                  {
+                    const elCell = showCell(array[i]);
+                    elCell.classList.add("active");
+                    prevCell.classList.remove("active");
+                    prevCell = elCell;
+                  }
+                  if (!array.length || !this.status)
+                  {
+                    prevCell.classList.remove("active");
+                    if (this.status)
+                      this.stop();
+
+                    // workers.delete(this);
+                    // this.worker.terminate();
+                  }
                 }
-                if (!array.length || last)
-                {
-                  prevCell.classList.remove("active");
-                  this.worker.status = 0;
-                  this.list.delete(this);
-                  this.worker.terminate();
-                }
-              });
-              this.worker.status = 1;
-              this.steps(opt.animation === undefined ? SETTINGS.animation : opt.animation);
-              this.speed(30);
+              };
+              this.date = now;
+              this.status = 1;
+              this.steps = opt.animation === undefined ? SETTINGS.animation : opt.animation;
+              this.speed = 30;
               if (opt.start)
                 this.start();
+
+              workers.set(this, this.pref);
+            }
+            message(data)
+            {
+              this.worker.postMessage(data);
             }
             start()
             {
-              this.worker.postMessage({command:"start"});
+              this.message({command:"start"});
             }
             pause()
             {
-              this.worker.postMessage({command:"pause"});
+              this.message({command:"pause"});
             }
             stop()
             {
-              this.worker.postMessage({command:"stop"});
+              this.message({command:"stop"});
             }
             add(data)
             {
-              this.worker.postMessage({index: data});
+              this.message({index: data});
             }
-            speed(data)
+            delete(that = this)
             {
-              this.worker.postMessage({opt: {speed: data}});
+              if (workers.size > 1)
+              {
+                that.status = -1;
+                that.worker.terminate();
+                workers.delete(that);
+                return;
+              }
+              that.status = 0;
+              that.message({pref: that.pref});
             }
-            delay(data)
+            get date() {return this.pref.date;}
+            set date(data)
             {
-              this.worker.postMessage({opt: {delay: data}});
+              this.pref.date = data;
             }
-            steps(data)
+            get id() {return this.pref.id;}
+            set id(data)
             {
-              this.worker.postMessage({opt: {steps: data}});
+              this.pref.id = data;
+              this.message({pref: this.pref});
             }
-            get status(){ return this.worker.status;}
-            get list() {return list;}
+            get speed() {return this.pref.speed;}
+            set speed(data)
+            {
+              this.pref.speed = data;
+              this.message({pref: this.pref});
+            }
+            get delay() {return this.pref.delay;}
+            set delay(data)
+            {
+              this.pref.delay = data;
+              this.message({pref: this.pref});
+            }
+            get steps() {return this.pref.steps;}
+            set steps(data)
+            {
+              this.pref.steps = data;
+              this.message({pref: this.pref});
+            }
+            get status(){ return this.pref.status;}
+            set status(status){
+              this.pref.status = status;
+              this.message({pref: this.pref});
+            }
           }//class Animation
 
           return {
             new: (opt) => new Animation(opt),
+            start: () =>
+            {
+              workers.forEach((status, anim) => anim.status && anim.start());
+            },
+            pause: () =>
+            {
+              workers.forEach((status, anim) => anim.status && anim.pause());
+            },
             stop: () =>
             {
-              list.forEach((info, anim) => anim.stop());
+              workers.forEach((status, anim) => anim.status && anim.stop());
             },
             steps: (data) =>
             {
-              list.forEach((info, anim) => anim.steps(data));
+              workers.forEach((status, anim) => anim.steps = data);
             },
-            list
+            list: workers
           };
         })(), //animations
 
@@ -674,6 +804,7 @@
           };
         })(),
         showPrev = new Map();
+
 
   delete window.mineTemp;
   let timerTimeout,
@@ -706,7 +837,7 @@
   {
     el.addEventListener("click", e =>
     {
-      STATS.clear(e.target.classList.contains("board") ? [SETTINGS.width,SETTINGS.height,SETTINGS.mines] : undefined);
+      STATS.clear(e.target.classList.contains("board") ? STATS.id() : undefined);
     });
   });
   function setOptions(opts)
@@ -714,9 +845,8 @@
     if (opts === undefined)
     {
       opts = SETTINGS.toJSON();
-      opts.presets = ""+[SETTINGS.width, SETTINGS.height, SETTINGS.mines];
+      opts.presets = STATS.id();
     }
-
     for(let id in opts)
     {
       const el = EL[id],
@@ -743,10 +873,10 @@
       {
         if (!el.children.length)
         {
-          const def = ""+[SETTINGS.default.width, SETTINGS.default.height, SETTINGS.default.mines];
-          for(let name in presets)
+          const def = STATS.id("default");
+          for(let name in PRESETS)
           {
-            option.value = presets[name];
+            option.value = PRESETS[name];
             option.textContent = name;
             option.className = option.value == def ? "default" : "";
             el.appendChild(option);
@@ -756,7 +886,7 @@
           option.textContent = "Custom";
           el.appendChild(option);
         }
-        el.value = ""+[SETTINGS.width, SETTINGS.height, SETTINGS.mines];
+        el.value = STATS.id();
         if (!el.value)
           el.value = "";
 
@@ -779,8 +909,8 @@
         if (!min)
           max++;
 
-        while(el.children.length > max)
-          el.removeChild(el.children[max]);
+        while(el.children.length > 1 && el.children.length > max)
+          el.removeChild(el.children[el.children.length-1]);
 
         el.value = SETTINGS[el.id];
       }
@@ -789,7 +919,7 @@
     {
       el.value = SETTINGS[el.id];
       el.min = SETTINGS.min[el.id];
-      el.max = el.id == "mines" ? SETTINGS.width * SETTINGS.height - 1 : SETTINGS.max[el.id];
+      el.max = SETTINGS.max[el.id];
     }
     if (el.___inited)
       return;
@@ -802,16 +932,16 @@
             isSelect = el.tagName  == "SELECT";
       let value = isCheckbox ? el.checked : isSelect ? ~~el.value : Math.max(el.min, Math.min( ~~el.value, el.max));
   
-      if (el.id == "openFirst")
-        value = value;// ? settings.default[el.id] : 0;
-      else if (el.id == "presets")
+      if (el.id == "presets")
       {
         if (el.value != "")
         {
           value = el.value.split(",");
-          SETTINGS.width = +value[0];
-          SETTINGS.height = +value[1];
-          SETTINGS.mines = +value[2];
+          for(let i = 0; i < ID.length; i++)
+          {
+            SETTINGS[ID[i]] = ~~value[i];
+// console.log(ID[i], value[i], SETTINGS[ID[i]], SETTINGS.max[ID[i]]);
+          }
           value += "";
         }
         else
@@ -834,24 +964,27 @@
       setOptions(opts);
       if (isCheckbox)
         return;
-  
-      if (el.id != "mines")
-      {
-        const max = SETTINGS.width * SETTINGS.height - 1;
-        EL.mines.max = max;
-        if (~~EL.mines.value > max)
-        {
-          SETTINGS.mines = max;
-          EL.mines.value = max;
-        }
-      }
+
+
+      // if (el.id != "mines")
+      // {
+      //   const max = SETTINGS.width * SETTINGS.height - 1;
+      //   EL.mines.max = max;
+      //   if (~~EL.mines.value > max)
+      //   {
+      //     SETTINGS.mines = max;
+      //     EL.mines.value = max;
+      //   }
+      // }
       clearTimeout(timerInput);
       if (["presets"].includes(el.id) || SETTINGS.resetBoard[el.id])
+      {
         timerInput = setTimeout(() =>
         {
           init(true);
           setOptions();
         }, isSelect ? 0 : 300);
+      }
   
     });
   }
@@ -1041,7 +1174,7 @@
     if (SETTINGS.stats.pauseTime || SETTINGS.stats.start)
       SETTINGS.stats.started = 1;
 
-    setState();
+    p = setState();
     
     SETTINGS.save();
     init(false, false);
@@ -1064,6 +1197,7 @@
     document.body.dataset.state = ["", "start", "pause"][f];
     EL.pause.disabled = !f;
     EL.pause.textContent = ["Pause", "Pause", "Resume"][f];
+    return f;
   }
 
   function onClick(e)
@@ -1074,11 +1208,12 @@
       return;
   
     const index = Array.from(EL.table.children).indexOf(e.target),
-          leftClick = SETTINGS.click ? e.type != "click" : e.type == "click",
-          table = SETTINGS.table;
-  
-    let val = table[index];
-    if ((leftClick && (val & OPEN || val & FLAG || val & SHOW)) || (!leftClick && val & OPEN) || (!leftClick && !SETTINGS.stats.start))
+          leftClick = e.type == "click",
+          table = SETTINGS.table,
+          val = table[index],
+          type = val & TYPE;
+
+    if (type == ROCK || (leftClick && (val & OPEN || val & FLAG || val & SHOW)) || (!leftClick && val & OPEN) || (!leftClick && !SETTINGS.stats.start))
       return;
   
     if (!SETTINGS.stats.start)
@@ -1095,7 +1230,7 @@
       audio("dig");
       SETTINGS.table[index] &= ~QUESTION;
       openCell(index);
-      if ((val & TYPE) == MINE)
+      if (type == MINE)
       {
         SETTINGS.stats.time = new Date().getTime() - SETTINGS.stats.start;
         anim.explode.timer = anim.explode.duration+1;
@@ -1114,22 +1249,29 @@
     else
     {
       let type = FLAG;
-      if (table[index] & FLAG)
+      if (SETTINGS.questionMark)
       {
-        type = QUESTION;
-        table[index] &= ~FLAG;
-      }
-      else if (table[index] & QUESTION)
-      {
-        type = 0;
-        table[index] &= ~QUESTION;
+        if (table[index] & FLAG)
+        {
+          type = QUESTION;
+          table[index] &= ~FLAG;
+        }
+        else if (table[index] & QUESTION)
+        {
+          type = 0;
+          table[index] &= ~QUESTION;
+        }
+        else
+        {
+          type = FLAG;
+        }
+        table[index] |= type;
       }
       else
       {
-        type = FLAG;
+        table[index] &= ~QUESTION;
+        table[index] ^= FLAG;
       }
-
-      table[index] |= type;
 
       audio("flag" + (type & FLAG ? "" : "off"));
 
@@ -1153,23 +1295,32 @@
     }
   
     SETTINGS.save();
-    console.log(table[0], table[0] & FLAG, table[0] & QUESTION)
     //  e.target.textContent = val;
   }//onClick()
 
   function saveStats(win)
   {
-    let stats = STATS[[SETTINGS.width,SETTINGS.height,SETTINGS.mines]],
+    let stats = STATS[STATS.id()],
     now = new Date().getTime(),
     table = SETTINGS.table;
     if (!stats[now])
       stats[now] = [];
 
     stats = stats[now];
-
+    const mines = [],
+          rocks = [];
+    for(let i = 0; i < table.length; i++)
+    {
+      const type = table[i] & TYPE;
+      if (type == MINE)
+        mines[mines.length] = i;
+      else if (type == ROCK)
+        rocks[rocks.length] = i;
+    }
     stats[STATS_RESULT] = ~~win;
     stats[STATS_STEPS] = [...SETTINGS.stats.steps];
-    stats[STATS_MINES] = table.reduce((ret, v, i) => ((v & TYPE) == MINE && (ret[ret.length] = i), ret), []);
+    stats[STATS_MINES] = mines;
+    stats[STATS_ROCKS] = rocks;
     stats[STATS_TIME] = SETTINGS.stats.time;
     stats[STATS_PERFECT] = perfect.val;
     STATS.save();
@@ -1290,6 +1441,7 @@ console.log("finished", won);
   {
     let opened = 0,
         mines = 0,
+        rocks = 0,
         flagRequire = SETTINGS.flagRequire,
         table = SETTINGS.table;
     for(let i = 0; i < table.length; i++)
@@ -1299,6 +1451,7 @@ console.log("finished", won);
             isOpen = val & OPEN,
             isFlag = val & FLAG,
             isQuestion = val & QUESTION,
+            isRock = type == ROCK,
             isMine = type == MINE;
   
       if (val & SHOW || (isMine && isOpen) || (flagRequire && isMine && !isFlag))// || !((type != MINE && val & OPEN) || (type == MINE && val & FLAG)))
@@ -1307,10 +1460,13 @@ console.log("finished", won);
       if (isOpen)
         opened++;
 
-      if  (isMine)
+      if (isMine)
         mines++;
+
+      if (isRock)
+        rocks++;
     }
-    return opened + mines == table.length;
+    return opened + mines + rocks == table.length;
   }
 
   function showDigits(el, text)
@@ -1537,9 +1693,10 @@ console.log("finished", won);
         for(let o = 0; o < offset.length; o++)
         {
           const i = getIndexOffset(index, offset[o][0], offset[o][1]),
-                val = table[i];
+                val = table[i],
+                type = val & TYPE;
 
-          if (!(val === undefined || val == MINE || val & FLAG || val & QUESTION || table[i] & OPEN))
+          if (!(val === undefined || val == MINE || val & FLAG || val & QUESTION || type == ROCK || table[i] & OPEN))
           {
             array.push(i);
           }
@@ -1637,6 +1794,7 @@ console.log("finished", won);
       SETTINGS.stats.started = 0;
 
     animations.stop();
+    // animations.pause();
     gameStatus = 0;
     EL.table.className = "";
     document.body.classList.remove("finished");
@@ -1665,8 +1823,10 @@ console.log("finished", won);
     SETTINGS.table.length = SETTINGS.width * SETTINGS.height;
     if (index > -1)
     {
-      const max = Math.min(SETTINGS.mines, SETTINGS.table.length - 2);
       let mines = 0,
+          rocks = 0,
+          minesMax = Math.min(SETTINGS.mines, SETTINGS.max.mines),
+          rocksMax = Math.min(SETTINGS.rocks, SETTINGS.max.rocks),
           indexes = OFFSET.reduce((ret, o, i)=>
           {
             if (i % 2)
@@ -1682,7 +1842,17 @@ console.log("finished", won);
             return ret;
           }, [index]);
 
-      while(mines < max)
+      if (rocksMax)
+      while(rocks < rocksMax)
+      {
+        const rock = rand(0, SETTINGS.table.length-1);
+        if (!indexes.includes(rock) && !SETTINGS.table[rock])
+        {
+          rocks++;
+          SETTINGS.table[rock] = ROCK;
+        }
+      }
+      while(mines < minesMax)
       {
         const mine = rand(0, SETTINGS.table.length-1);
         if (!indexes.includes(mine) && !SETTINGS.table[mine])
@@ -1727,10 +1897,14 @@ console.log("finished", won);
       {
         delete elCell.dataset.type;
       }
+      if (itemType == ROCK)
+      {
+        elCell.dataset.type = itemType;
+      }
       if (index > -1)
       {
         let minesNum = 0;
-        if (item != MINE)
+        if (item != MINE && item != ROCK)
         {
           for(let o = 0; o < OFFSET.length; o+=2)
           {
@@ -1773,14 +1947,23 @@ console.log("finished", won);
 
           started = true;
         }
+        if (itemType == ROCK)
+        {
+          elCell.dataset.type = itemType;
+          elCell.classList.add("shown");
+        }
 
       }
-      if ((table[i] & TYPE) == MINE)
+      const type = table[i] & TYPE;
+      if (type == MINE)
         mines++;
       else
       {
-        if (table[i] & TYPE)
-          notEmpty[notEmpty.length] = i;
+        if (type)
+        {
+          if (type != ROCK)
+            notEmpty[notEmpty.length] = i;
+        }
         else
         {
           empty[empty.length] = i;
@@ -1792,7 +1975,8 @@ console.log("finished", won);
     const _table = Object.assign([], newTable);
     for(let i = 0, table = SETTINGS.table; i < table.length; i++)
     {
-      if (perfectList[i] !== undefined || (table[i] & TYPE) != 0)
+      const type = table[i] & TYPE;
+      if (perfectList[i] !== undefined || (type != 0 && type != ROCK))
         continue;
   
       Object.assign(perfectList, openCell(i, _table, false));
@@ -1813,11 +1997,6 @@ console.log("finished", won);
     }
     // console.log(perfectList);
   
-    if (SETTINGS.openFirst && started && difficulty() > difficultyCheat)
-    {
-      perfect[0]--;
-      perfect[1]--;
-    }
   // console.log(perfect, mines, perfectSteps);
     // if (flags !== settings.stats.mines)
     // {
@@ -1838,34 +2017,14 @@ console.log("finished", won);
     if (finish)
       finished(finish == WIN);
   
-    EL.difficulty.textContent = Object.keys(presets)[Math.min(~~(difficulty() * 3 / 11), 11)];// + " [" + ~~(difficulty()) + "%]";
-    EL.menuDifficulty.textContent = EL.difficulty.textContent;
-    EL.difficulty.dataset.value = ~~(difficulty() + 1);
+    const diff = Math.min(100, Math.max(0, ~~(difficulty()))),
+          presets = Object.keys(PRESETS),
+          preset = ~~(diff*(presets.length-1)/100);
+console.log(diff, preset,presets[preset])
+    EL.difficulty.textContent = presets[preset];// + " [" + ~~(difficulty()) + "%]";
+    EL.menuDifficulty.textContent = diff;
+    EL.difficulty.dataset.value = diff;
   
-    if (!started && SETTINGS.openFirst && difficulty() > difficultyCheat)
-    {
-      // empty.forEach(e => {
-      //   if (!(settings.table[e] & OPEN))
-      //   {
-      //     openCell(e);
-      //     perfect--;
-      //   }
-      // });
-
-      let list = empty;
-
-      if (empty.length)
-      {
-        perfect[0]--;
-        perfect[1]--;
-      }
-      else if(notEmpty.length > 1)
-        list = notEmpty;
-
-      if (list.length)
-        openCell(list[~~(rand(0, list.length-1))], undefined, false);
-  
-    }
     perfect[1] += mines;
 
     board && board.update();
@@ -1879,9 +2038,9 @@ console.log("finished", won);
 
   }// init();
   
-  function difficulty()
+  function difficulty(width = SETTINGS.width, height = SETTINGS.height, mines = SETTINGS.mines, rocks = SETTINGS.rocks)
   {
-    return SETTINGS.mines * 100 / (SETTINGS.width * SETTINGS.height);
+    return (mines * difficultyMultiplier) * 100 / ((width * height) - (rocks * rockDifficulty));
   }
 
   function getWidthHeight(width, height)
@@ -2134,7 +2293,11 @@ console.log("finished", won);
   
         for(let i = 0; i < vars.length; i++)
           this.style[vars[i]] = style.getPropertyValue("--cell-" + vars[i]);
-  console.log(this.style);
+
+        for(let i = 0; i < 9; i++)
+          this.style[i] = style.getPropertyValue("--cell-" + i);
+
+        console.log(this.style);
       }
   
       static init()
@@ -2309,20 +2472,35 @@ console.log("finished", won);
         const {x, y} = indexToXY(index),
               value = SETTINGS.table[index],
               type = value & TYPE,
-              size = this.getTextBox(type);
+              size = this.getTextBox(type),
+              isMine = type == MINE,
+              isRock = type == ROCK,
+              isEmpty = !type,
+              isOpen = value & OPEN,
+              isFlag = value & FLAG,
+              isShow =  value & SHOW,
+              isVis = value & (SHOW + OPEN),
+              isShake =  type == MINE && value & OPEN,
+              background = this.style[isRock ? "rock" : isOpen ? "open" + isMine ? "Bad": "Good" : "fill"];
         return {
           x: x * this.cellSize + 0.5,
           y: y * this.cellSize + 0.5,
           value,
-          type: type,
-          isMine: type == MINE,
-          isOpen: value & OPEN,
-          isFlag: value & FLAG,
-          isShow: value & SHOW,
-          isVis: value & (SHOW + OPEN),
+          type,
+          isMine,
+          isRock,
+          isEmpty,
+          isOpen,
+          isFlag,
+          isShow,
+          isVis,
           status: value & (OPEN + FLAG + SHOW),
-          isShake: type == MINE && value & OPEN,
+          isShake,
           size,
+          style: {
+            background,
+            color: this.style[type],
+          },
           step: []
         };
       }
