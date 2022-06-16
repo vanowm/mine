@@ -102,7 +102,7 @@
           <span>Time:</span><span id="clock" class="digit clock"><span data-time="d"></span><span data-time="h">00</span><span data-time="m">00</span><span data-time="s">00</span><span data-time="ms">000</span></span>
         </span>
         <span class="game">
-          <span>Game:</span><span><span id="gamePercent" class="digit">0</span>%<!--/<span id="minesTotal" class="digit">0</span>--></span>
+          <span>Progress:</span><span><span id="gamePercent" class="digit">0</span>%<!--/<span id="minesTotal" class="digit">0</span>--></span>
         </span>
         <span class="mines">
           <span>Mines:</span><span><span id="minesFound" class="digit">0</span><!--/<span id="minesTotal" class="digit">0</span>--></span>
@@ -115,19 +115,11 @@
     <div class="tableBox">
       <div class="borderOut">
         <div class="borderIn">
-          <div id="table"></div>
+          <canvas id="tableCanvas"></canvas>
         </div>
       </div>
     </div>
   </main>
-  <?php
-// if (isset($_GET['c']))
-// {
-?>
-    <div class="table"><canvas id="tableCanvas"></canvas></div>
-<?php
-// }
-?>
   <footer>
     <div class="statsBoard">
       <table class="statsBoardBox">
