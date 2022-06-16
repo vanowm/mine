@@ -2,7 +2,7 @@
 
 {
   "use strict";
-  const EL = new Proxy(
+  const table = document.createElement("div"), EL = new Proxy(
         {
           get get()
           {
@@ -10,6 +10,8 @@
             {
               get(target,prop,proxy)
               {
+                if  (prop == "table")
+                  return table;
                 return document.getElementById(prop) || document.querySelector(prop);
               },
             });
@@ -51,6 +53,14 @@
         TYPE = OPEN - 1,
         WIN = 1,
         LOOSE = 2,
+        NW = 0,
+        N = 1,
+        NE = 2,
+        E = 3,
+        SE = 4,
+        S = 5,
+        SW = 6,
+        W = 7,
         STATE_STOPPED = 0,
         STATE_STARTED = 1,
         STATE_PAUSED = 2,
@@ -76,7 +86,7 @@
             duration: 500, //duration
           },
         },
-        tableBox = EL.table.parentNode.parentNode.parentNode,
+        tableBox = EL.table,//.parentNode.parentNode.parentNode,
         ID = ["width", "height", "mines", "rocks"],
         rockDifficulty = 1.2,
         difficultyMultiplier = 2,
@@ -98,9 +108,9 @@
         {
           width: {default: 16, value: 16, min: 9, max: 100, resetBoard: true},
           height: {default: 16, value: 16, min: 9, max: 100, resetBoard: true},
-          mines: {default: 38, value: 38, min: 2, max: 9998, resetBoard: true},
+          mines: {default: 32, value: 32, min: 2, max: 9998, resetBoard: true},
           rocks: {default: 0, value: 0, min: 0, max: 9998, resetBoard: true},
-          zoom: {default: 12, value: 12, min: 1, max: 70},
+          zoom: {default: 3, value: 3, min: 1, max: 70},
           questionMark: {default: true, value: true},
           darkMode: {default: 0, value: 0, min: 0, max: 2},
           table: {default: [], value: []},
@@ -533,46 +543,88 @@
           const workers = new Map(),
                 WORKER_URL = URL.createObjectURL(new Blob(["(" + (() =>
                 {
+                  
 const pref = {},
-      array = [],
+      frames = [],
       closeTimer = (t = 60000) => closeTimer.timer = setTimeout(commands.close, t);
       commands = {
         start: (() => 
         {
+console.log("start");
           pref.status = 1,
           this.postMessage({pref});
           loop();
         }).bind(this),
         stop: (() =>
         {
+console.log("stop");
           pref.status = 0;
-          this.postMessage({array, pref});
+          const array = frames.reduce((ret, a) => (a && a.length && (ret[ret.length] = a), ret), []);
+          this.postMessage({array, pref, count: 0});
           closeTimer();
-          return (array.length = 0);
+          frames.length = 0;
+          return;
         }).bind(this),
         pause: (() =>
         {
+console.log("pause");
           pref.status = 2;
           this.postMessage({pref});
         }).bind(this),
         close: (() =>
         {
+console.log("close");
+
           pref.status = -1;
           this.postMessage({pref});
         }).bind(this)
       };
-
-let prevRet = ""+array;
-
+      
+let prevRet,
+    INDEX = null,
+    width, height,
+    count = -1,
+    x,y;
+let first;
+function indexToXY(index)
+{
+  return {x: index % width, y: ~~(index / width)};
+}
 this.addEventListener("message", e =>
 {
   const data = e.data;
+  let xy;
   for(let i in data)
   {
     switch(i)
     {
+      case "init":
+        width = data[i].width;
+        height = data[i].height;
+        INDEX = data[i].index;
+        xy = indexToXY(INDEX);
+        x = xy.x;
+        y = xy.y;
+        count = -1;
+        break;
       case "index":
-        array[array.length] = data[i];
+        const index = data[i];
+        xy = indexToXY(index);
+        if (count == -1)
+        {
+console.log("added", index);
+first = true;
+          count = 0;
+        }
+
+        count++;
+        const dist = ~~Math.hypot(xy.x - x, xy.y - y);
+        if (!frames[dist])
+          frames[dist] = [];
+
+        const frame = frames[dist];
+        frame[frame.length] = index;
+        // array[array.length] = data[i];
         break;
       case "pref":
         for(let o in data[i])
@@ -607,17 +659,34 @@ const loop = (timestamp = performance.now()) =>
     return;
   }
   const ret = {array: [], pref};
-  for (let i = 0, max = Math.min(pref.steps, array.length); i < max; i++)
+  for(let i = 0; i < frames.length; i++)
   {
-    if (!array.length)
-      break;
+    if (!frames[i])
+      continue;
 
-    ret.array[ret.array.length] = array.shift();
+    if (!ret.array.length && frames[i].length)
+    {
+      ret.array = [...frames[i]];
+      count -= frames[i].length;
+      frames[i].length = 0;
+      break;
+    }
   }
+  ret.count = count;
+  // for (let i = 0, max = Math.min(pref.steps, array.length); i < max; i++)
+  // {
+  //   if (!array.length)
+  //     break;
+
+  //   ret.array[ret.array.length] = array.shift();
+  // }
   pref.timer = timestamp;
   if (prevRet === ""+ret.array)
     return;
-
+if (first) {
+  console.log(ret);
+  first = false;
+}
   this.postMessage(ret);
   prevRet = "" + ret.array;
 };
@@ -656,10 +725,11 @@ closeTimer();
                 this.id = workers.size;
               }
               this.worker.onerror = e => console.error(e);
+              let first;
               this.worker.onmessage =  e =>
               {
 // console.log("onMessage", e.data);
-                const {array, pref} = e.data;
+                const {array, pref, count} = e.data;
                 Object.assign(this.pref, pref);
                 if (this.pref.status == -1)
                 {
@@ -669,21 +739,34 @@ closeTimer();
                 this.date = new Date();
                 if (!SETTINGS.stats.started)
                   return;
-            
+
                 if (array !== undefined)
                 {
                   for(let i = 0; i < array.length; i++)
                   {
-                    const elCell = showCell(array[i]);
-                    elCell.classList.add("active");
-                    prevCell.classList.remove("active");
-                    prevCell = elCell;
+                    let a = array[i];
+                    if (!(a instanceof Array))
+                      a = [a];
+
+                    for(let i = 0; i < a.length; i++)
+                    {
+                      if (!first) {
+                        console.log(first, array);
+                        first = true;
+                      }
+                                                                  const elCell = showCell(a[i]);
+                      elCell.classList.add("active");
+                      setTimeout(() =>  elCell.classList.remove("active"), this.speed);
+                      prevCell = elCell;
+                    }
                   }
-                  if (!array.length || !this.status)
+                  if (!count || !this.status)
                   {
                     prevCell.classList.remove("active");
                     if (this.status)
+                    {
                       this.stop();
+                    }
 
                     // workers.delete(this);
                     // this.worker.terminate();
@@ -692,8 +775,10 @@ closeTimer();
               };
               this.date = now;
               this.status = 1;
-              this.steps = opt.animation === undefined ? SETTINGS.animation : opt.animation;
-              this.speed = 30;
+              this.steps = 1;///opt.animation === undefined ? SETTINGS.animation : opt.animation;
+              this.speed = SETTINGS.animation ? (SETTINGS.max.animation+1 - SETTINGS.animation) * 5 - 4 : 0;//30;
+              console.log("speed", this.speed);
+              this.message({init:{index:opt.index, width:SETTINGS.width, height: SETTINGS.height}});
               if (opt.start)
                 this.start();
 
@@ -1041,6 +1126,53 @@ closeTimer();
       scaling = false;
     });
 
+
+
+    EL.tableCanvas.addEventListener("touchstart", e =>
+    {
+  
+      if (e.touches.length === 2)
+      {
+        scaling = Math.hypot(e.touches[0].pageX - e.touches[1].pageX, e.touches[0].pageY - e.touches[1].pageY);
+        last = scaling;
+        e.preventDefault();
+      }
+    });
+
+    EL.tableCanvas.addEventListener("touchmove", e =>
+    {
+      if (!scaling)
+        return;
+      
+      // e.preventDefault();
+      const dist = Math.hypot(e.touches[0].pageX - e.touches[1].pageX, e.touches[0].pageY - e.touches[1].pageY);
+      let zoom = SETTINGS.zoom;
+      // EL.difficulty.textContent = [settings.zoom, settings.min.zoom, settings.max.zoom];
+  
+      if (Math.abs(dist - scaling) > 10)
+      {
+        zoom += dist - scaling > 0 ? 1 : -1;
+        if (zoom < SETTINGS.min.zoom)
+          zoom = SETTINGS.min.zoom;
+  
+        if (zoom > SETTINGS.max.zoom)
+          zoom = SETTINGS.max.zoom;
+  
+        scaling = dist;
+        SETTINGS.zoom = zoom;
+        timerZoom = setTimeout(setZoom, 10);
+      }
+  
+    },{passive: false});
+  
+    EL.tableCanvas.addEventListener("touchend", e =>
+    {
+      if (!scaling)
+        return;
+  
+      scaling = false;
+    });
+
     window.addEventListener("wheel", e =>
     {
       if (!isParent(e.target, "body") || e.ctrlKey)
@@ -1078,7 +1210,6 @@ closeTimer();
       if ((dragScroll && e.clientX == clientX && e.clientY == clientY)
             || (!dragScroll && Math.hypot(e.clientX - clientX, e.clientY - clientY) < 8)) //allow 6px movement
         return;
-  
       clearTimeout(timerTimeout);
       document.body.classList.add("drag");
       if (!dragScroll)
@@ -1087,7 +1218,8 @@ closeTimer();
       }
   
       document.body.classList.add("dragging");
-      tableBox.scrollBy(clientX - e.clientX, clientY - e.clientY);
+
+      ((e.target == EL.tableCanvas) ? e.target.parentNode : tableBox).scrollBy(clientX - e.clientX, clientY - e.clientY);
       dragScroll = true;
       // mouseDown.preventDefault();
       // mouseDown.stopPropagation();
@@ -1112,6 +1244,24 @@ closeTimer();
     }
   
     EL.table.addEventListener("mousedown", e =>
+    {
+      // if (!e.button)
+      //   return;
+
+      timerTimeout = setTimeout(() =>
+      {
+        document.body.classList.add("drag");
+        dragScroll = true;
+      }, 3000);
+      mouseDown = e;
+      dragScroll = false;
+      ({clientX, clientY} = e);
+      e.preventDefault();
+      window.addEventListener("mouseup", onMouseUp);
+      window.addEventListener("mousemove", onMouseMove);
+    });
+
+    EL.tableCanvas.addEventListener("mousedown", e =>
     {
       // if (!e.button)
       //   return;
@@ -1202,6 +1352,7 @@ closeTimer();
 
   function onClick(e)
   {
+console.log("click", e.type)
     e.preventDefault();
   
     if (gameStatus || dragScroll || e.target === EL.table || SETTINGS.stats.pauseTime || (e.type == "auxclick" && e.button == 2))
@@ -1426,9 +1577,10 @@ console.log("finished", won);
             isFlag = val & FLAG,
             isQuestion = val & QUESTION,
             isOpen = val & OPEN,
+            isRock = type == ROCK,
             isShow = val & SHOW;
   
-      if ((isMine && ((flagRequire && isFlag) || (!flagRequire && !isOpen))) || (type != MINE && !isFlag && isOpen))
+      if (type == ROCK || (isMine && ((flagRequire && isFlag) || (!flagRequire && !isOpen))) || (type != MINE && !isFlag && isOpen))
         good++;
   
       if (isShow || (isOpen && isMine && !isFlag))
@@ -1582,43 +1734,22 @@ console.log("finished", won);
   
   function getBorders(index) //set borders around same type of cells
   {
-    const item = SETTINGS.table[index],
-          borders = [],
-          isOpen = ~~Boolean(item & OPEN),
-          isFlag = ~~Boolean(item & FLAG),
-          isShow = ~~Boolean(item & SHOW),
-          value = item & TYPE,
-          neighbors = [
-            getIndexOffset(index, 0, -1), /*top*/
-            getIndexOffset(index, 1, 0), /*right*/
-            getIndexOffset(index, 0, 1), /*bottom*/
-            getIndexOffset(index, -1, 0) /*left*/
-          ];
-  // const deb2 = {i:index, v:value};
-  // deb2["|" + (item < 0 ? "------" : (isFlag?"f":"-") + (isShow?"s":"-") + (isOpen?"o":"-") + value.toString(2).padStart(Math.log2(TYPE)+1,0))] = item < 0 ? -1 : item;
-  // console.log(deb2);
-    for(let i = 0; i < neighbors.length; i++)
+    const borders = [];
+    for(let i = 0; i < OFFSET.length; i+=2)
     {
-      const nItem = SETTINGS.table[neighbors[i]] === undefined ? -(FLAG << 1) : SETTINGS.table[neighbors[i]],
-            nOpen = ~~Boolean(nItem & OPEN),
-            nFlag = ~~Boolean(nItem & FLAG),
-            nShow = ~~Boolean(nItem & SHOW),
-            nValue = nItem & TYPE;
-  // const deb = {};
-  // deb[["T","R","B","L"][i]] = nItem < 0 ? -1 : nValue;
-  // deb["|" + (nItem < 0 ? "------" : (nFlag?"f":"-") + (nShow?"s":"-") + (nOpen?"o":"-") + nValue.toString(2).padStart(Math.log2(TYPE)+1,0))] = nItem < 0 ? -1 : nItem;
-  // console.log(Object.assign(deb, {r:""+[
-  //         (nValue == MINE && value == MINE && (isOpen + isShow) && (nOpen + nShow)),
-  //         (value != MINE && nValue != MINE && (isOpen == nOpen || isShow == nShow)),
-  //         (isFlag && isFlag == nFlag),
-  
-  //         nValue == MINE, value == MINE, (isOpen + isShow), (nOpen + nShow)
-  // ]}));
-      borders[i] = !(nItem >= 0 && ((value == MINE && value == nValue && (isOpen + isShow) && (nOpen + nShow)) || (value != MINE && nValue != MINE && (isOpen == nOpen || isShow == nShow)) || (isFlag && isFlag == nFlag)));
+      const neighbor = getIndexOffset(index, OFFSET[i], OFFSET[i+1]),
+            nItem = neighbor < 0 ? OPEN : SETTINGS.stats.started || SETTINGS.stats.time ? SETTINGS.table[neighbor] : MINE,
+            value = nItem,//SETTINGS.table[neighbor],
+            type = value & TYPE,
+            isMine = type == MINE,
+            isFlag = value & FLAG,
+            isOpen = value & OPEN,
+            isShow = value & SHOW;
+      borders[i/2] = !!(isOpen || (isMine && isShow && !isFlag));
     }
-  // console.log(borders)
+if (index == 36)
+console.log(borders)
     return borders;
-  
   }
 
   function showCell(index, animated)
@@ -1653,7 +1784,7 @@ console.log("finished", won);
     let animation;
     if (animate && SETTINGS.animation)
     {
-      animation = animations.new({start: true});
+      animation = animations.new({start: true, index});
     }
     while(array.length)
     {
@@ -1667,9 +1798,9 @@ console.log("finished", won);
 
       if (show)
       {
-
         showCell(index, animation);
         animation && animation.add(index);
+          // animation && animation.add(index);
       // const borders = getBorders(index);
       // for(let b = 0; b < borders.length; b++)
       //   elCell.classList.toggle(BORDERS[b], Boolean(borders[b]));
@@ -1704,6 +1835,7 @@ console.log("finished", won);
         }
       }
     }
+
     // if (show)
     //   settings.table = table;
     return ret;
@@ -2014,6 +2146,7 @@ console.log("finished", won);
     SETTINGS.save(); //save settings
     timer(0);
     const finish = isFinished();
+console.log("finishedddd", finish)
     if (finish)
       finished(finish == WIN);
   
@@ -2043,16 +2176,11 @@ console.log(diff, preset,presets[preset])
     return (mines * difficultyMultiplier) * 100 / ((width * height) - (rocks * rockDifficulty));
   }
 
-  function getWidthHeight(width, height)
+  function getWidthHeight(width = SETTINGS.width, height = SETTINGS.height)
   {
-    if (width === undefined) 
-      width = SETTINGS.width;
-    if (height === undefined)
-      height = SETTINGS.height;
-
     if (window.innerHeight > window.innerWidth)
     {
-      [width,height] = [height,width];
+//      [width,height] = [height,width];
     }
     return {width, height};
   }
@@ -2136,7 +2264,7 @@ console.log(diff, preset,presets[preset])
   }
   function canvas()
   {
-    return class canvas
+    return class Canvas
     {
       constructor()
       {
@@ -2155,42 +2283,75 @@ console.log(diff, preset,presets[preset])
           xs: 0, //screen position
           ys: 0,
         };
-        const style = getComputedStyle(this.canvas);
-        this.cellSize = parseFloat(style.fontSize);
-        this.offset = this.cellSize / 2.74075;
-        this.textSize = this.cellSize - this.offset + 0.5;
-        this.textSizeSmall = this.textSize / 3.5;
-        this.shadowSize = this.cellSize / 10;
-        this.ctx.width = SETTINGS.width * this.cellSize + this.shadowSize*2;
-        this.ctx.height = SETTINGS.height * this.cellSize + this.shadowSize*2;
-        this.canvas.width = this.ctx.width;
-        this.canvas.height = this.ctx.height;
+        // const style = getComputedStyle(this.canvas);
+        // this.cellSize = 16;//parseFloat(style.fontSize);
+        // this.offset = this.cellSize / 2.74075;
+        // this.textSize = this.cellSize - this.offset + 0.5;
+        // this.textSizeSmall = this.textSize / 3.5;
+        // this.shadowSize = this.cellSize / 10;
+        // this.ctx.width = SETTINGS.width * this.cellSize + this.shadowSize*2;
+        // this.ctx.height = SETTINGS.height * this.cellSize + this.shadowSize*2;
+        // this.canvas.width = this.ctx.width;
+        // this.canvas.height = this.ctx.height;
         this.images = {};
         this.style = {};
         this.loadImages();
         this.loadColors();
-  console.log(this.cellSize, this.ctx.font, style.font);
+        this.canvas.addEventListener("mousemove", this.onMove.bind(this));
+        this.canvas.addEventListener("click", this.onClick.bind(this));
+        this.canvas.addEventListener("auxclick", this.onClick.bind(this));
+        this.canvas.addEventListener("contextmenu", this.onClick.bind(this));
+        this.canvas.addEventListener("mouseout", this.onMove.bind(this));
+        this.prevCell = null;
+        this.hoverCell = -1;
         this.update();
       }
-  
-      update()
+      onMove(e)
+      {
+        // console.log(e);
+        const index = this.eventToIndex(e);
+        if (index == this.hoverCell || this.isFinished)
+          return;
+
+        this.drawCell({index: this.hoverCell});
+        this.drawCell({index, hover: true});
+        this.hoverCell = index;
+      }
+      eventToIndex(e)
+      {
+        let rect = e.target.getBoundingClientRect(),
+            x = e.clientX-rect.left,
+            y = e.clientY-rect.top;
+        if (x < 0 || x > this.width-1 || y < 0 || y > this.height-1)
+          return -1;
+        
+        return this.xyToIndex(x, y);
+      }
+      xyToIndex(x, y)
+      {
+        x = ~~((x-1) / this.cellSize);
+        y = ~~((y-1) / this.cellSize);
+        return y * SETTINGS.width + x;
+      }
+      update(index = -1)
       {
         const style = getComputedStyle(this.canvas);
-        this.cellSize = parseFloat(style.fontSize);
-        this.offset = this.cellSize / 2.74075;
-        this.textSize = this.cellSize - this.offset + 0.5;
+        this.cellSize = SETTINGS.zoom * 8;// parseFloat(style.fontSize);
+        this.offset = this.cellSize / 8;
+        this.textSize = this.cellSize - this.offset;// + 0.5;
         this.textSizeSmall = this.textSize / 3.5;
         this.shadowSize = this.cellSize / 10;
-        this.ctx.width = SETTINGS.width * this.cellSize + this.shadowSize*2;
-        this.ctx.height = SETTINGS.height * this.cellSize + this.shadowSize*2;
-        this.canvas.width = this.ctx.width;
-        this.canvas.height = this.ctx.height;
+        this.width = SETTINGS.width * this.cellSize + 1;// + this.shadowSize*2;
+        this.height = SETTINGS.height * this.cellSize + 1;// + this.shadowSize*2;
         this.font = "bold " + this.textSize + "px " + this.style.font;
         this.fontSmall = this.textSizeSmall + "px " + this.style.font;
         this.ctx.font = this.font;
         this.ctx.textBaseline = "middle";
         this.ctx.textAlign = "center";
-        this.ctx.clearRect(0, 0, this.ctx.width, this.ctx.height);
+        this.ctx.lineWidth = 1;
+        // this.ctx.clearRect(0, 0, this.ctx.width, this.ctx.height);
+        this.ctx.fillStyle = this.style.fill;
+        this.ctx.fillRect(0, 0, this.width, this.height);
         this.tableSorted = {
           draw: [],
           visible: [],
@@ -2202,7 +2363,7 @@ console.log(diff, preset,presets[preset])
         this.tableUpdate();
         this.isFinished = isFinished();
   console.log(this.isFinished);
-        this.draw();
+        this.draw(index);
       }
       fitString (str, w)
       {
@@ -2258,7 +2419,6 @@ console.log(diff, preset,presets[preset])
         mines.reverse();
         const mine = mines.indexOf(SETTINGS.table.indexOf(MINE + OPEN));
         mines.splice(0, 0, mines.splice(mine, 1)[0]);
-        this.savedCell = null;
         this.tableSorted.draw = this.tableSorted.draw.concat(mines, reg, flags);
         this.tableSorted.reg =  this.tableSorted.reg.concat(reg);
         this.tableSorted.visible = this.tableSorted.visible.concat(visible);
@@ -2270,7 +2430,10 @@ console.log(diff, preset,presets[preset])
       {
         const imgs = {
           flag: EL.imgFlag,
-          mine: EL.imgMine
+          flagGood: EL.imgFlagGood,
+          flagBad: EL.imgFlagBad,
+          mine: EL.imgMine,
+          question: EL.imgQuestion
         };
         for(let i in imgs)
         {
@@ -2278,9 +2441,9 @@ console.log(diff, preset,presets[preset])
           this.images[i] = new Promise((resolve, reject) =>
           {
             const img = new Image();
-            console.log(url);
+            console.log(i, url);
             img.onload = e => resolve(img);
-            img.onerror = reject;
+            img.onerror = e => reject(i, url);
             img.src = url;
           });
         }
@@ -2288,7 +2451,7 @@ console.log(diff, preset,presets[preset])
   
       loadColors()
       {
-        const vars = ["stroke", "fill", "flag", "mineGood", "mineBad", "open", "openGood", "openBad", "font"],
+        const vars = ["stroke", "fill", "flag", "mineGood", "mineBad", "mineOpened", "open", "openGood", "openBad", "font", "rock", "question", "hover", "hover_light", "hover_dark", "bevel_light", "bevel_dark"],
               style = getComputedStyle(document.body);
   
         for(let i = 0; i < vars.length; i++)
@@ -2305,15 +2468,15 @@ console.log(diff, preset,presets[preset])
         return EL.tableCanvas ? new this() : null;
       }
   
-      draw()
+      draw(index = -1)
       {
         for(let i = 0; i < this.tableSorted.draw.length; i++)
         {
-          this.drawCell(this.tableSorted.draw[i]);
+          this.drawCell({index: this.tableSorted.draw[i], hover: this.tableSorted.draw[i] == index});
         }
         if (this.isFinished == LOOSE)
         {
-          this.drawCell(this.tableSorted.draw[0], 0, 1);
+          this.drawCell({index: this.tableSorted.draw[0]});
         }
       }
   
@@ -2345,163 +2508,331 @@ console.log(diff, preset,presets[preset])
         // list = list.concat(mines, reg, flags);
         for(let i = 0; i < list.length; i++)
         {
-          if (list[i] > -1) this.drawCell(list[i], !i);
+          if (list[i] > -1) this.drawCell({index: list[i]});
         }
       
       }
   
       
-      drawCell(index, shake = false, save = false, ctx = this.ctx)
+      drawCell({index = -1, hover = false, ctx = this.ctx})
       {
-        if (shake && !this.savedCell)
+        if (index < 0)
           return;
-  
+
         const cell = this.cell(index);
-        let {x, y, type, status} = cell,
+
+        if (hover && (cell.isRock))
+          return;
+// console.log(cell, hover && (cell.isRock || cell.isVis));
+        let {x, y, type} = cell,
             size = this.cellSize;
   
-        if (cell.isFlag)
-        {
-          x -= 1;
-          y -= 1;
-            size += 1;
-        }
-        x++;
-        y++;
+        // if (cell.isFlag)
+        // {
+        //   x -= 1;
+        //   y -= 1;
+        //     size += 1;
+        // }
+        // x++;
+        // y++;
+        ctx.clearRect(x, y, size,size);
+        ctx.fillStyle = this.style.fill;
+        ctx.fillRect(x, y, size, size);
+
         ctx.strokeStyle = this.style.stroke;
-        ctx.fillStyle = cell.isOpen ? this.style.open : this.style.fill;
+        ctx.lineWidth = 1;
+        // ctx.fillStyle = cell.isOpen ? this.style.open : this.style.fill;
+        ctx.fillStyle = hover && !(cell.isVis || this.isFinished) ? this.style.hover : this.style.fill;
         if (this.isFinished)
         {
-          ctx.fillStyle = cell.isShow ? this.style.openBad : this.isFinished == WIN ? this.style.openGood : this.style.open;
+          ctx.fillStyle = cell.isShow ? this.style.fill : (this.isFinished == WIN ? this.style.openGood : this.style.fill);
           let p = -1;
           while ((p = this.steps.indexOf(index, p+1)) > -1)
             cell.step[cell.step.length] = p + 1;
         }
   
-        if (cell.isFlag)
-          ctx.fillStyle = cell.isMine && this.isFinished ? this.style.mineGood : this.style.flag;
+        if (cell.isRock)
+          ctx.fillStyle = this.style.rock;
+        else if (cell.isFlag)
+          ctx.fillStyle = this.style.flag;
+        else if (cell.isQuestion)
+          ctx.fillStyle = this.style.question;
         else if (cell.isMine && this.isFinished)
-        {
-          ctx.fillStyle = this.style.mineBad;
-        }
-        if (cell.isShake && save)
-        {
-          this.savedCell = ctx.getImageData(x, y, size, size);
-        }
-        ctx.clearRect(x, y, size,size);
-        ctx.save();
-        if (cell.isFlag)
-        {
-          // x += 1;
-          // y += 1;
-          // size -= 1;
-          ctx.shadowBlur = this.shadowSize/1.5;
-          ctx.shadowOffsetY = this.shadowSize;
-          ctx.shadowOffsetX = this.shadowSize;
-          ctx.shadowColor = "#000";
-        }
-        if (cell.isShake && this.savedCell)
-          ctx.putImageData(this.savedCell, x, y);
-        else
+          ctx.fillStyle = cell.isOpen ? this.style.mineOpened : this.style.fill;
+        // if (cell.isShake && save)
+        // {
+        //   this.savedCell = ctx.getImageData(x, y, size, size);
+        // }
+        // ctx.save();
+        // if (cell.isFlag)
+        // {
+        //   // x += 1;
+        //   // y += 1;
+        //   // size -= 1;
+        //   // ctx.shadowBlur = this.shadowSize/1.5;
+        //   // ctx.shadowOffsetY = this.shadowSize;
+        //   // ctx.shadowOffsetX = this.shadowSize;
+        //   // ctx.shadowColor = "#000";
+        // }
+        // if (cell.isShake && this.savedCell)
+        //   ctx.putImageData(this.savedCell, x, y);
+        // else
+// console.log(index, cell.isShow, cell)
           ctx.fillRect(x, y, size, size);
-  
-        ctx.restore();
-        if (cell.isFlag && !this.isFinished)
-          this.drawImg("flag", x, y, size);
+          
+          // let bev = Math.min(this.cellSize / (hover ? 20 : 3), 8);
+          let bev = Math.min(this.cellSize / 4, 10);
+          if (!cell.isVis || (cell.isFlag || (!cell.isOpen && (!this.isFinished || (isFinished && !cell.isMine)))))
+          {
+            ctx.save();
+            let borders = cell.borders;
+            let _x = 0, _y = 0, _w = 0, _h = 0;
+            if (hover && !(cell.isVis || this.isFinished))
+            {
+              if (borders[W])
+                _x = bev;
+              if (borders[E])
+                _w = bev;
+              if (borders[N])
+                _y = bev;
+              if (borders[S])
+                _h = bev;
+              ctx.fillStyle = this.style.hover;
+              ctx.fillRect(x+_x,y+_y,size-_w-_x,size-_h-_y);
+            }
+            for(let i = 0; i < bev; i+=1)
+            {
+              const offset = i,
+                    alpha = (~~(((bev -i) / bev) * 255)).toString(16).padStart(2,0),
+                    light = (this.style.bevel_light) + alpha,//"rgba(255,255,255," + (bev -i) / bev + ")",
+                    dark = (this.style.bevel_dark) + alpha;//"rgba(0,0,0," + (bev-i) / bev + ")";
+
+                    ctx.strokeStyle = light;
+              if (borders[W])
+              {
+                let top = borders[N] ? offset : 0,
+                    bottom = borders[S] ? offset : 0;
+                ctx.beginPath();
+                ctx.moveTo(x+offset,y+size-bottom);
+                ctx.lineTo(x+offset,y+top);
+                ctx.stroke();
+                ctx.closePath();
+              }
+              if (borders[N])
+              {
+                let right = borders[E] ? offset : 0,
+                    left = borders[W] ? offset : 0;
+
+                // if (!borders[LEFT])
+                ctx.beginPath();
+                ctx.moveTo(x+left,y+offset);
+                ctx.lineTo(x+size-right,y+offset);
+                ctx.stroke();
+              }
+              else
+              {
+                let stroke = ctx.strokeStyle;
+                if (borders[NE] && !borders[E])
+                {
+                  ctx.beginPath();
+                  ctx.strokeStyle = light;
+                  ctx.moveTo(x+size,y+offset);
+                  ctx.lineTo(x+size-offset/2,y+offset/2);
+                  ctx.stroke();
+
+                  ctx.beginPath();
+                  ctx.strokeStyle = dark;
+                  ctx.moveTo(x+size-offset,y);
+                  ctx.lineTo(x+size-offset/2,y+offset/2);
+                  ctx.stroke();
+                }
+                if (borders[NW] && !borders[W])
+                {
+                  ctx.beginPath();
+                  ctx.strokeStyle = light;
+                  ctx.moveTo(x,y+offset);
+                  ctx.lineTo(x+offset/2,y+offset/2);
+                  ctx.moveTo(x+offset/2,y+bev-(bev -offset/2));
+                  ctx.lineTo(x+offset,y);
+                  ctx.stroke();
+                }
+                ctx.strokeStyle = stroke;
+              }
+      
+              ctx.strokeStyle = dark;
+              if (borders[S])
+              {
+                let right = borders[E] ? offset : 0,
+                    left = borders[W] ? offset : 0;
+                ctx.beginPath();
+                ctx.moveTo(x+left,y+size-offset);
+                ctx.lineTo(x+size-right,y+size-offset);
+                ctx.stroke();
+              }
+              else
+              {
+                let stroke = ctx.strokeStyle;
+                if (borders[SE] && !borders[E])
+                {
+                  ctx.beginPath();
+                  ctx.strokeStyle = dark;
+                  ctx.moveTo(x+size,y+size-offset);
+                  ctx.lineTo(x+size-offset/2,y+size-offset/2);
+                  ctx.moveTo(x+size-offset/2,y+size-offset/2);
+                  ctx.lineTo(x+size-offset,y+size);
+                  ctx.stroke();
+                }
+                if (borders[SW] && !borders[W])
+                {
+                  ctx.beginPath();
+                  ctx.strokeStyle = dark;
+                  ctx.moveTo(x,y+size-offset);
+                  ctx.lineTo(x+offset/2,y+size-offset/2);
+                  ctx.stroke();
+
+                  ctx.beginPath();
+                  ctx.strokeStyle = light;
+                  ctx.moveTo(x+offset/2,y+size-offset/2);
+                  ctx.lineTo(x+offset,y+size);
+                  ctx.stroke();
+                }
+                ctx.strokeStyle = stroke;
+              }
+              if (borders[E])
+              {
+                let top = borders[N] ? offset : 0,
+                    bottom = borders[S] ? offset : 0;
+                // if (!borders[BOTTOM])
+                ctx.beginPath();
+                ctx.moveTo(x+size-offset,y+size-bottom);
+                ctx.lineTo(x+size-offset,y+top);
+                ctx.stroke();
+              }
+            }
+            ctx.restore();
+          }
+          // 6) Draw stencil with shadow but only on non-transparent pixels
+          // ctx.globalCompositeOperation = "source-atop";
+          // ctx.fill();
+    
+        // ctx.restore();
+        const callback = () =>
+        {
+          if (cell.step)
+          {
+            ctx.save();
+            ctx.fillStyle = this.style.stroke;
+            ctx.font = this.fontSmall;
+            ctx.textAlign = "end";
+            ctx.textBaseline = "top";
+            const txt = this.fitString("" + cell.step, size-5),
+                  offset = this.textSizeSmall / 4;
+            ctx.fillStyle = this.style.stroke;
+            ctx.strokeStyle = this.style.fill;
+            ctx.lineWidth = (this.textSizeSmall / 4);
+            ctx.strokeText(txt, x + size-offset, y + offset);
+            ctx.fillText(txt, x + size-offset, y + offset);
+            ctx.restore();
+          }
+          ctx.strokeStyle = this.style.stroke;
+          ctx.strokeRect(x, y, size, size);
+        }; //callback
+        let finish = false;
+        
+        if (cell.isFlag)
+          this.drawImg({name: "flag" + (this.isFinished ? cell.isMine  ? "Good" : "Bad" : ""), x, y, size, callback});
+        else if (cell.isQuestion && (!this.isFinished || (this.isFinished && !cell.isMine)))
+          this.drawImg({name: "question", x, y, size, callback});
         else if (cell.isMine && this.isFinished)
         {
-          if (!cell.isShake || (cell.isShake && this.savedCell))
+          let offsetX = 0, offsetY = 0, rotate = 0;
+          if (cell.isShake)
           {
-            let offsetX = 0, offsetY = 0, rotate = 0;
-            if (shake)
-            {
-              offsetX = ~~(Math.random() * size  - size /2) / 20;
-              offsetY = ~~(Math.random() * size  - size /2) / 20;
-              rotate = Math.random() * 10;
-            }
-            this.drawImg("mine", x, y, size, offsetX, offsetY, rotate);
+            offsetX = ~~(Math.random() * size  - size /2) / 20;
+            offsetY = ~~(Math.random() * size  - size /2) / 20;
+            rotate = Math.random() * 10;
           }
+          this.drawImg({name: "mine", x, y, size, offsetX, offsetY, rotate, callback});
         }
-        else if (cell.type && (cell.isOpen || cell.isShow))
+        else if (cell.type && cell.isVis)
         {
-          ctx.fillStyle = this.style.stroke;
+          ctx.fillStyle = cell.style.color;
+
+// const obj = {}
+// for(let i in ctx)
+// {
+//   if (typeof ctx[i] != "function")
+//   obj[i] = ctx[i];
+// }
           ctx.fillText(type, x + Math.round(size/2)+0.0, y + Math.round(size /2)+~~(this.textSize / 10) - 0.5);
+          finish = true;
         }
-  
-        if (cell.step && !(cell.isShake && this.savedCell))
+        else
+          finish = true;
+
+        if (finish)
         {
-          ctx.save();
-          ctx.fillStyle = this.style.stroke;
-          ctx.font = this.fontSmall;
-          ctx.textAlign = "end";
-          ctx.textBaseline = "top";
-          const txt = this.fitString("" + cell.step, size-5),
-                offset = this.textSizeSmall / 4;
-          ctx.fillStyle = this.style.stroke;
-          ctx.strokeStyle = this.style.fill;
-          ctx.lineWidth = (this.textSizeSmall / 4);
-          ctx.strokeText(txt, x + size-offset, y + offset);
-          ctx.fillText(txt, x + size-offset, y + offset);
-          ctx.restore();
+          callback();
         }
-        ctx.strokeRect(x, y, size, size);
+
+        return cell;
       }
   
-      drawImg(img, x, y, size, offsetX = 0, offsetY = 0, rotate = 0)
+      drawImg({name, x, y, size, offsetX = 0, offsetY = 0, rotate = 0, callback = () => {}})
       {
-        this.images[img].then(img => 
+        this.images[name].then(img => 
         {
           this.ctx.save();
+          this.ctx.fillStyle = this.style.fill;
           this.ctx.globalCompositeOperation = "source-atop";
           this.ctx.shadowBlur = this.shadowSize/1.5;
           this.ctx.shadowColor = "#FFFFFF7F";
           const tx = x+size/2,
                 ty = y+size/2;
-  
+
           this.ctx.translate(tx,ty);
           this.ctx.rotate(rotate* Math.PI / 180);
           this.ctx.translate(-tx,-ty);
           this.ctx.drawImage(img, x+offsetX+size/9, y+offsetY+size/9, size-size/4.5, size-size/4.5);
           this.ctx.restore();
-  
-        }).catch(console.error);
+          callback();
+        }).catch(console.error)
+          .finally(callback);
       }
   
       cell(index)
       {
-        const {x, y} = indexToXY(index),
+        const that = this,
+              {x, y} = indexToXY(index),
               value = SETTINGS.table[index],
               type = value & TYPE,
-              size = this.getTextBox(type),
               isMine = type == MINE,
               isRock = type == ROCK,
-              isEmpty = !type,
               isOpen = value & OPEN,
-              isFlag = value & FLAG,
-              isShow =  value & SHOW,
-              isVis = value & (SHOW + OPEN),
-              isShake =  type == MINE && value & OPEN,
-              background = this.style[isRock ? "rock" : isOpen ? "open" + isMine ? "Bad": "Good" : "fill"];
+              isShow = value & SHOW || this.isFinished && !isOpen;
         return {
+          index,
           x: x * this.cellSize + 0.5,
           y: y * this.cellSize + 0.5,
           value,
           type,
           isMine,
           isRock,
-          isEmpty,
           isOpen,
-          isFlag,
           isShow,
-          isVis,
+          isEmpty: !type,
+          isFlag: value & FLAG,
+          isQuestion: value & QUESTION,
+          isVis: value & (SHOW + OPEN),
           status: value & (OPEN + FLAG + SHOW),
-          isShake,
-          size,
+          isShake: type == MINE && value & OPEN,
+          size: this.getTextBox(type),
           style: {
-            background,
-            color: this.style[type],
+            background: this.style[isRock ? "rock" : isOpen ? "open" + isMine ? "Bad": "Good" : isShow ? "openBad" : "fill"],
+            get color() {return SETTINGS.monochrome ? that.style.stroke : that.style[type];},
           },
-          step: []
+          step: [],
+          borders: getBorders(index)
         };
       }
   
@@ -2528,15 +2859,123 @@ console.log(diff, preset,presets[preset])
       getIndexOffset(index, offsetX, offsetY)
       {
         let {x, y} = indexToXY(index);
-        x += offsetX-0.5;
-        y += offsetY-0.5;
+        // x += offsetX-0.5;
+        // y += offsetY-0.5;
         if (x < 0 || x > this.width-1 || y < 0 || y > this.height-1)
           return -1;
       
         return y * this.width + x;
       }
+
+
+      onClick(e)
+      {
+        e.preventDefault();
+        e.stopPropagation();
+        e.stopImmediatePropagation();
+
+        if (gameStatus || dragScroll || SETTINGS.stats.pauseTime || (e.type == "auxclick" && e.button == 2))
+          return;
+    
+        const index = this.eventToIndex(e),
+              leftClick = e.type == "click",
+              table = SETTINGS.table,
+              val = table[index],
+              type = val & TYPE;
+        if (index < 0 || type == ROCK || (leftClick && (val & OPEN || val & FLAG || val & SHOW)) || (!leftClick && val & OPEN) || (!leftClick && !SETTINGS.stats.start))
+          return;
       
-  
+        if (!SETTINGS.stats.start)
+        {
+          init(index);
+          timer();
+        }
+        SETTINGS.stats.steps[SETTINGS.stats.steps.length] = (index << 1) | !leftClick; //set bit1 = flag
+    
+        setState();
+    
+        if (leftClick)
+        {
+          audio("dig");
+          SETTINGS.table[index] &= ~QUESTION;
+          openCell(index);
+          if (type == MINE)
+          {
+            SETTINGS.stats.time = new Date().getTime() - SETTINGS.stats.start;
+            anim.explode.timer = anim.explode.duration+1;
+            setTimeout(() =>
+            {
+              anim.explode.timer = 0;
+              anim.explode.el.style.setProperty('--shakeX', '');
+              anim.explode.el.style.setProperty('--shakeY', '');
+              anim.explode.el.style.setProperty('--shakeR', '');
+            }, anim.explode.duration);
+            audio("explode");
+            saveStats(0);
+            return finished();
+          }
+        }
+        else
+        {
+          let type = FLAG;
+          if (SETTINGS.questionMark)
+          {
+            if (table[index] & FLAG)
+            {
+              type = QUESTION;
+              table[index] &= ~FLAG;
+            }
+            else if (table[index] & QUESTION)
+            {
+              type = 0;
+              table[index] &= ~QUESTION;
+            }
+            else
+            {
+              type = FLAG;
+            }
+            table[index] |= type;
+          }
+          else
+          {
+            table[index] &= ~QUESTION;
+            table[index] ^= FLAG;
+          }
+    
+          audio("flag" + (type & FLAG ? "" : "off"));
+    
+          e.target.dataset.type = type;
+          SETTINGS.stats.mines += val & FLAG ? -1 : val & QUESTION ? 0 : 1;
+        }
+      
+        if (!(table[index] & OPEN + FLAG + QUESTION))
+          delete e.target.dataset.type;
+      
+        if (isWon())
+        {
+          SETTINGS.stats.time = new Date().getTime() - SETTINGS.stats.start;
+          audio(SETTINGS.stats.steps.length == perfect.val ? "perfect" : "win");
+          saveStats(1);
+          finished(true);
+        }
+        else
+        {
+          board && board.update(index);
+        }
+      
+        SETTINGS.save();
+      }
+
+      get width() { return this.canvas.width;}
+      set width(size){
+        this.canvas.width = size;
+        this.ctx.width = size;
+      }
+      get height() { return this.canvas.height;}
+      set height(size){
+        this.canvas.height = size;
+        this.ctx.height = size;
+      }
     };
   }
 

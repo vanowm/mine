@@ -84,12 +84,12 @@ body {
   --border-color-dark: black;
   --border-color-light: transparent;
   --border-color: #6C6C6C;
-  --background-color: #B9B9B9;
-  --background-color-rock: #999999;
+  --background: #B9B9B9;
+  --background-rock: #6b6b6b;
   /* --border-color-light: rgba(192, 192, 192, 0.5); */
-  --background-color-even: #FDFCFD;
-  --background-color-header: #CCCCCC;
-  --background-color-header-hover: #BCBCBC;
+  --background-even: #FDFCFD;
+  --background-header: #CCCCCC;
+  --background-header-hover: #BCBCBC;
   --border-size: min(calc(var(--zoom) / 3.7), 4px);
   --border-top: var(--border-size);
   --border-right: calc(var(--border-size) * -1);
@@ -108,10 +108,16 @@ body {
   --border-left-color-light: transparent;
   --border-light: #FDFCFD;
   --border-dark: #757575;
+  --cell-hover: #9db3c2;
+  --cell-hover_light: #c6dae7;
+  --cell-hover_dark: #000000;
+  --cell-bevel_light: #eFeFeF;
+  --cell-bevel_dark: #404040;
   --cell-font: roboto-bold, var(--font-default);
   --cell-stroke: black;
-  --cell-fill: white;
-  --cell-flag: rgb(252, 178, 118);
+  --cell-fill: var(--background);
+  --cell-flag: var(--cell-fill);/* rgb(252, 178, 118);*/
+  --cell-question: var(--cell-fill);
   --cell-mineGood:  rgb(118, 252, 196);
   --cell-mineBad: rgb(207, 153, 153);
   --cell-mineOpened: rgb(255, 0, 0);
@@ -119,8 +125,8 @@ body {
   /* --cell-openGood: rgba(219, 255, 244, 0.5); */
   --cell-openBad: rgba(160, 126, 126, 0.363);
   --cell-mineBad: var(--cell-openBad);
-  --cell-openGood: var(--background-color);
-  --cell-0: var(--background-color);
+  --cell-openGood: var(--background);
+  --cell-0: var(--background);
   --cell-1: #001BF6;
   --cell-2: #31761B;
   --cell-3: #EC3322;
@@ -129,6 +135,8 @@ body {
   --cell-6: #34797A;
   --cell-7: #484848;
   --cell-8: #7B7B7B;
+  --cell-rock: var(--background-rock);
+
   --iconSize: calc(100% + var(--border-size));
   --flagSize: 100%;
   /* background-color: #C0C0C0; */
@@ -219,7 +227,7 @@ nav.control {
   font-weight: bold;
   background-repeat: no-repeat;
   /* z-index: 2; */
-  background-color: var(--background-color);
+  background-color: var(--background);
   border: var(--border-size) solid;
   border-top-color: var(--border-light);
   border-right-color: var(--border-dark);
@@ -284,11 +292,11 @@ body[data-state="pause"] .borderIn:after {
 
 body[data-state="pause"]
 {
-  --background-color: lightgrey;
+  --background: lightgrey;
 }
 body:not([data-state="pause"]) #table > *[data-type="10"]
 {
-  background-color: var(--background-color-rock);
+  background-color: var(--background-rock);
   /* border-color: transparent; */
   outline: 1px solid var(--border-color);
   border-style: inset;
@@ -323,7 +331,7 @@ body:not([data-state="pause"]):not([data-monochrome="1"]) #table > *[data-type="
   color: var(--cell-8);
 }
 
-#imgFlag,
+#imgFlagBad,
 body:not([data-state="pause"]) #table > *[data-type="9"]::before,
 body:not([data-state="pause"]) #table > *[data-type="64"]::before,
 body:not([data-state="pause"]) #table > *[data-type="128"]::before
@@ -354,7 +362,7 @@ body:not([data-state="pause"]) #table > *[data-type="128"]::before
 {
   display: inline-block;
   padding: calc(var(--border-size) * 1);
-  background-color: var(--background-color);
+  background-color: var(--background);
   border: calc(var(--border-size) / 1.5) solid;
   border-top-color: var(--border-light);
   border-right-color: var(--border-dark);
@@ -367,7 +375,7 @@ body:not([data-state="pause"]) #table > *[data-type="128"]::before
   display: inline-block;
   /* padding: 1px 0 0 1px; */
   /* margin-left: -1px; */
-  background-color: var(--background-color);
+  background-color: var(--background);
   border: calc(var(--border-size) / 1.5) solid;
   border-top-color: var(--border-dark);
   border-right-color: var(--border-light);
@@ -378,10 +386,11 @@ body:not([data-state="pause"]) #table > *[data-type="128"]::before
   justify-content: space-around;
   align-items: center;
 }
-
+#imgFlagGood,
 body:not([data-state="pause"]) #table > *[data-type="9"].flag::before {
   background-image: url(images/flag_lightgreen_000.svg);
 }
+#imgFlag,
 body:not([data-state="pause"]) #table > *[data-type="64"]:not(.opened):not(.shown)::before {
   background-image: url(images/flag_lightblue_000.svg);
 }
@@ -389,7 +398,8 @@ body:not([data-state="pause"]) #table > *[data-type="128"]::before
 {
   transform: rotate(180deg);
 }
-  body:not([data-state="pause"]) #table > *[data-type="128"]:not(.opened):not(.shown)::before {
+#imgQuestion,
+body:not([data-state="pause"]) #table > *[data-type="128"]:not(.opened):not(.shown)::before {
   background-image: url(images/flag_grey_000.svg);
 }
 body:not([data-state="pause"]) #table > *[data-type="9"]:not(.flag)::before {
@@ -618,7 +628,7 @@ body:not([data-state="pause"]) #table > *[data-step][data-type="9"]:not(.flag)::
 {
   padding: 0.4em;
   border-bottom: 1px solid var(--border-dark);
-  background-color: var(--background-color-header);
+  background-color: var(--background-header);
 }
 
 body[data-state="start"] .statsBoardBox .clear
@@ -654,13 +664,13 @@ body[data-state="start"] .statsBoardBox .clear
 }
 .statsBoardBox .clear:hover::after
 {
-  background-color: var(--background-color-header-hover);
+  background-color: var(--background-header-hover);
 }
 
 
 .statsBoardBox tr:nth-child(even)
 {
-  background-color: var(--background-color-even);
+  background-color: var(--background-even);
 }
 .statsBoardBox td
 {
@@ -1011,16 +1021,21 @@ input#main-menu:not(:checked) ~ * .main-menu div.menu {
   color: GrayText;
 }
 
-
+.table
+{
+  overflow: auto;
+  max-height: calc(100vh - 7em);
+}
 #tableCanvas {
   /* width: calc(100vw - 1.5em); */
   /* height: 100vh; */
   /* border: 1px solid red; */
   font-size: var(--fontSize);
   font-family: roboto-mono, var(--font-default);
-  padding: 1em;
+  /* margin: 1em; */
   display: flex;
   margin: auto;
+  /* border: 1px solid red; */
 }
 
 body:not([data-state="pause"]) .active
@@ -1029,3 +1044,7 @@ body:not([data-state="pause"]) .active
 /* border-radius: 100%; *//* border-width: 0 !important; */
 }
 
+.tableBox
+{
+  display: none;
+}

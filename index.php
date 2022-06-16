@@ -121,12 +121,12 @@
     </div>
   </main>
   <?php
-if (isset($_GET['c']))
-{
+// if (isset($_GET['c']))
+// {
 ?>
-    <canvas id="tableCanvas"></canvas>
+    <div class="table"><canvas id="tableCanvas"></canvas></div>
 <?php
-}
+// }
 ?>
   <footer>
     <div class="statsBoard">
@@ -206,6 +206,9 @@ if (isset($_GET['c']))
   </footer>
   <div class="hidden">
     <div id="imgFlag"></div>
+    <div id="imgFlagGood"></div>
+    <div id="imgFlagBad"></div>
+    <div id="imgQuestion"></div>
     <div id="imgMine"></div>
   </div>
   <script type="text/javascript" src="<?=getfile("js/mine.js")?>"></script>
