@@ -3,6 +3,7 @@
 <head>
   <meta http-equiv="content-type" content="text/html; charset=UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=0">
+  <meta name="color-scheme" content="light dark">
   <title>Mine'er'ish</title>
   <link rel="stylesheet" media="screen" href="<?=getfile("css/mine.css")?>">
   <script type="text/javascript">
@@ -82,7 +83,7 @@
         </div>
       </div>
       <label for="main-menu" class="menu-icon" title="Menu">
-        <span class="navicon" aria-label="Hamburger menu 'icon'"></span>
+        <span class="navIcon" aria-label="Hamburger menu 'icon'"></span>
       </label>
     </nav>
   </header>
@@ -115,7 +116,7 @@
     <div class="tableBox">
       <div class="borderOut">
         <div class="borderIn">
-          <canvas id="tableCanvas"></canvas>
+          <canvas id="table"></canvas>
         </div>
       </div>
     </div>

@@ -2,7 +2,7 @@
 
 {
   "use strict";
-  const table = document.createElement("div"), EL = new Proxy(
+  const EL = new Proxy(
         {
           get get()
           {
@@ -10,8 +10,6 @@
             {
               get(target,prop,proxy)
               {
-                if  (prop == "table")
-                  return table;
                 return document.getElementById(prop) || document.querySelector(prop);
               },
             });
@@ -84,7 +82,7 @@
             duration: 500, //duration
           },
         },
-        tableBox = EL.tableCanvas.parentNode.parentNode.parentNode,
+        tableBox = EL.table.parentNode.parentNode.parentNode,
         ID = ["width", "height", "mines", "rocks"],
         rockDifficulty = 1.2,
         difficultyMultiplier = 2,
@@ -723,6 +721,7 @@ closeTimer();
               }
               this.worker.onerror = e => console.error(e);
               let first;
+              this.opened = new Map();
               this.worker.onmessage =  e =>
               {
 // console.log("onMessage", e.data);
@@ -739,7 +738,6 @@ closeTimer();
 
                 if (array !== undefined)
                 {
-                  let opened = new Map();
                   for(let i = 0; i < array.length; i++)
                   {
                     let a = array[i];
@@ -751,16 +749,21 @@ closeTimer();
                       for(let o = 0; o < OFFSET.length; o += 2)
                       {
                         const oi = getIndexOffset(a[i], OFFSET[o], OFFSET[o + 1]);
-                        if (opened.has(oi))
+                        if (this.opened.has(oi))
                           continue;
 
-                        board.drawCell({index:oi, });
-                        opened.set(oi, "");
+                        // openCell(oi, this.table, false, true);
+                        // this.table[oi] |= OPEN;
+                        board.drawCell({index:oi, table: this.table});
+                        // this.opened.set(oi, "");
                       }
-                      if (!opened.has(a[i]))
-                        board.drawCell({index:a[i]});
+                      if (!this.opened.has(a[i]))
+                      {
+                        this.table[a[i]] |= OPEN;
+                        board.drawCell({index:a[i], table: this.table});
+                      }
 
-                      opened.set(a[i], "");
+                      this.opened.set(a[i], "");
                       if (!first) {
                         console.log(first, array);
                         first = true;
@@ -789,6 +792,7 @@ closeTimer();
                 this.start();
 
               workers.set(this, this.pref);
+              this.table = opt.table || [];
             }
             message(data)
             {
@@ -902,7 +906,7 @@ closeTimer();
       dragScroll = false,
       gameStatus = 0,
       board,
-      perfect = [0,0];
+      perfect = [0,0]; //0: flagRequire off, 1: flagRequire on
 
   Object.defineProperty(perfect, "val",
   {
@@ -914,8 +918,13 @@ closeTimer();
   setZoom();
   setTheme();
   setOptions();
-
+  
   init(!SETTINGS.table.length);
+  document.fonts.ready.then(e =>
+  {
+    board = canvas().init();
+  });
+  
   EL.resetSettings.addEventListener("click", e =>
   {
     SETTINGS.clear();
@@ -1089,7 +1098,7 @@ closeTimer();
   
 
 
-    EL.tableCanvas.addEventListener("touchstart", e =>
+    EL.table.addEventListener("touchstart", e =>
     {
   
       if (e.touches.length === 2)
@@ -1100,7 +1109,7 @@ closeTimer();
       }
     });
 
-    EL.tableCanvas.addEventListener("touchmove", e =>
+    EL.table.addEventListener("touchmove", e =>
     {
       if (!scaling)
         return;
@@ -1126,7 +1135,7 @@ closeTimer();
   
     },{passive: false});
   
-    EL.tableCanvas.addEventListener("touchend", e =>
+    EL.table.addEventListener("touchend", e =>
     {
       if (!scaling)
         return;
@@ -1204,7 +1213,7 @@ closeTimer();
   
     }
   
-    EL.tableCanvas.addEventListener("mousedown", e =>
+    EL.table.addEventListener("mousedown", e =>
     {
       // if (!e.button)
       //   return;
@@ -1225,10 +1234,12 @@ closeTimer();
 
   EL.reset.addEventListener("click", init);
   EL.pause.addEventListener("click", e => pause());
-  
+  document.fonts.ready.then(e =>
+  {
+  });
+ 
   window.addEventListener("DOMContentLoaded", e =>
   {
-    board = canvas().init();
     // board && board.draw();
 //    init(!settings.table.length);
   });
@@ -1551,7 +1562,7 @@ console.log(borders)
     return borders;
   }
 
-  function openCell(index, table, animate = true)
+  function openCell(index, table, animate = true, single = false)
   {
     const array = [index],
           ret = {};
@@ -1563,11 +1574,13 @@ console.log(borders)
       table = SETTINGS.table;
     }
 
-    let animation;
+    let animation, _table = table;
     if (animate && SETTINGS.animation)
     {
-      animation = animations.new({start: true, index});
+      _table = [...table];
+      animation = animations.new({start: true, index, table: _table});
     }
+// console.log(table);
     const shown = new Map();
     while(array.length)
     {
@@ -1583,12 +1596,11 @@ console.log(borders)
       if (show)
       {
         if (nIndex == index)
-          board && board.showCell({index:index, around:show, shown});
+          board && board.showCell({index:nIndex, around:show, shown, table: _table});
         else
-          board && board.drawCell({index:index, preview: true});
+          board && board.drawCell({index:nIndex, table: _table});
         
 
-        // if (!shown.has(nIndex))
           animation && animation.add(nIndex);
 
         if (!isOpen)
@@ -1597,7 +1609,7 @@ console.log(borders)
       }
       ret[nIndex] = table[nIndex];
 
-      if (table[nIndex] == OPEN)
+      if ((!animation || !single) && table[nIndex] == OPEN)
       {
         let offset = [];
 //        OFFSET.push(OFFSET.shift(), OFFSET.shift());
@@ -1625,75 +1637,6 @@ console.log(borders)
     //   settings.table = table;
     return ret;
   }
-  // function openCell_(index, table)
-  // {
-  //   let array = [index],
-  //       ret = {},
-  //       show = false;
-  
-  //   if (!table)
-  //   {
-  //     show = true;
-  //     table = Object.assign([], settings.table);
-  //   }
-  
-  //   while(array.length)
-  //   {
-  //     index = array.pop();
-  //     if (show)
-  //     {
-  //       const elCell = EL.table.children[index];
-  //       elCell.dataset.type = table[index] & TYPE;
-  //       elCell.classList.add("shown");
-  //     // const borders = getBorders(index);
-  //     // for(let b = 0; b < borders.length; b++)
-  //     //   elCell.classList.toggle(BORDERS[b], Boolean(borders[b]));
-  
-  //       if (!(table[index] & OPEN))
-  //         settings.stats.open++;
-  
-  //     }
-  //     table[index] |= OPEN;
-  //     ret[index] = table[index];
-  //     if (table[index] != OPEN)
-  //       continue;
-  
-  //     for(let o = 0; o < OFFSET.length; o+=2)
-  //     {
-  //       let i = getIndexOffset(index, OFFSET[o], OFFSET[o+1]),
-  //           val = table[i]; //right
-  
-  //       if (val === undefined || val == MINE || val & FLAG)
-  //         continue;
-  
-  //       if (val === 0)
-  //       {
-  //         array[array.length] = i;
-  //         continue;
-  //       }
-        
-  //       if (!(val & OPEN))
-  //       {
-  //         if (show)
-  //         {
-  //           if (val)
-  //             EL.table.children[i].dataset.type = val;
-  
-  //           if (!(settings.table[i] & OPEN))
-  //             settings.stats.open++;
-  //             EL.table.children[i].classList.add("shown");
-  //         }
-  //         table[i] |= OPEN;
-  //       }
-  //       ret[i] = table[i];
-  //     }
-  //   }
-  //   if (show)
-  //     settings.table = table;
-  
-  //   return ret;
-  
-  // }
   
   function rand(min, max)
   {
@@ -1860,7 +1803,7 @@ console.log(borders)
     for(let i = 0, table = SETTINGS.table; i < table.length; i++)
     {
       const type = table[i] & TYPE;
-      if (perfectList[i] !== undefined || (type != 0 && type != ROCK))
+      if (perfectList[i] !== undefined || type != 0 || type == ROCK)
         continue;
   
       Object.assign(perfectList, openCell(i, _table, false));
@@ -1871,13 +1814,14 @@ console.log(borders)
 
     for(let i = 0, table = SETTINGS.table; i < table.length; i++)
     {
-      if (perfectList[i] === undefined && (table[i] & TYPE) != MINE)
-      {
-        perfect[0]++;
-        perfect[1]++;
-        perfectList[i] = table[i];
-        perfectSteps[perfectSteps.length] = i;
-      }
+      const type = table[i] & TYPE;
+      if (perfectList[i] !== undefined || type == MINE || type == ROCK)
+        continue;
+
+      perfect[0]++;
+      perfect[1]++;
+      perfectList[i] = table[i];
+      perfectSteps[perfectSteps.length] = i;
     }
     // console.log(perfectList);
   
@@ -1912,13 +1856,13 @@ console.log(diff, preset,presets[preset])
   
     perfect[1] += mines;
 
-    board && board.update();
     if (checkPause)
     {
       showDigits(EL.perfect, index == -1 && !started ? 0 : perfect.val);
       pause(SETTINGS.stats.pauseTime);
       if (!finish)
         STATS.show();
+        board && board.update();
     }
 
   }// init();
@@ -2020,7 +1964,7 @@ console.log(diff, preset,presets[preset])
     {
       constructor()
       {
-        this.canvas = EL.tableCanvas;
+        this.canvas = EL.table;
         this.ctx = this.canvas.getContext("2d");
         this.mouse = {
           xw: 0, //world position
@@ -2203,7 +2147,7 @@ console.log(diff, preset,presets[preset])
   
       loadColors()
       {
-        const vars = ["stroke", "fill", "flag", "mineGood", "mineBad", "mineOpened", "open", "openGood", "openBad", "font", "rock", "question", "hover", "hover_light", "hover_dark", "bevel_light", "bevel_dark"],
+        const vars = ["stroke", "fill", "flag", "mineGood", "mineBad", "mineOpened", "open", "openGood", "openBad", "font", "rock", "question", "question_color", "hover", "hover_light", "hover_dark", "bevel_light", "bevel_dark"],
               style = getComputedStyle(document.body);
   
         for(let i = 0; i < vars.length; i++)
@@ -2217,7 +2161,7 @@ console.log(diff, preset,presets[preset])
   
       static init()
       {
-        return EL.tableCanvas ? new this() : null;
+        return EL.table ? new this() : null;
       }
   
       draw(index = -1)
@@ -2265,7 +2209,7 @@ console.log(diff, preset,presets[preset])
       
       }
   
-      showCell({index = 1, hover = false, ctx = this.ctx, around = false, shown = new Map()})
+      showCell({index = 1, hover = false, ctx = this.ctx, around = false, shown = new Map(), table = SETTINGS.table})
       {
         if (around)
         {
@@ -2274,25 +2218,26 @@ console.log(diff, preset,presets[preset])
             const ai = getIndexOffset(index, OFFSET[i], OFFSET[i + 1]);
             if (shown.has(ai))
               continue;
-            this.drawCell({index: ai, ctx});
+            this.drawCell({index: ai, ctx, hover, table});
             shown.set(ai, '');
-console.log(ai);
+// console.log(ai);
           }
 
         }
-console.trace({...this.cell(index)})
+// console.trace({...this.cell(index)})
         if (!shown.has(index))
-          this.drawCell({index, hover, ctx});
+          this.drawCell({index, hover, ctx, table});
 
         shown.set(index, "");
       }
-      drawCell({index = -1, hover = false, ctx = this.ctx, preview = false})
+      drawCell({index = -1, hover = false, ctx = this.ctx, preview = false, table = SETTINGS.table})
       {
         if (index < 0)
           return;
 
-        const cell = this.cell(index);
-
+        const cell = this.cell(index, table);
+if (!index)
+console.trace(index, cell.isOpen);
         if (preview)
           cell.isOpen = false;
 
@@ -2326,14 +2271,16 @@ console.trace({...this.cell(index)})
             cell.step[cell.step.length] = p + 1;
         }
   
-        if (cell.isRock)
-          ctx.fillStyle = this.style.rock;
-        else if (cell.isFlag)
-          ctx.fillStyle = this.style.flag;
-        else if (cell.isQuestion)
-          ctx.fillStyle = this.style.question;
-        else if (cell.isMine && this.isFinished)
-          ctx.fillStyle = cell.isOpen ? this.style.mineOpened : this.style.fill;
+        if (!hover)
+          {if (cell.isRock)
+            ctx.fillStyle = this.style.rock;
+          else if (cell.isFlag)
+            ctx.fillStyle = this.style.flag;
+          else if (cell.isQuestion)
+            ctx.fillStyle = this.style.question;
+          else if (cell.isMine && this.isFinished)
+            ctx.fillStyle = cell.isOpen ? this.style.mineOpened : this.style.fill;
+        }
         // if (cell.isShake && save)
         // {
         //   this.savedCell = ctx.getImageData(x, y, size, size);
@@ -2517,7 +2464,12 @@ console.trace({...this.cell(index)})
         if (cell.isFlag)
           this.drawImg({name: "flag" + (this.isFinished ? cell.isMine  ? "Good" : "Bad" : ""), x, y, size, callback});
         else if (cell.isQuestion && (!this.isFinished || (this.isFinished && !cell.isMine)))
-          this.drawImg({name: "question", x, y, size, callback});
+        {
+          finish = true;
+          ctx.fillStyle = this.style.question_color;
+          ctx.fillText("?",  x + Math.round(size/2)+0.0, y + Math.round(size /2)+~~(this.textSize / 10) - 0.5);
+          // this.drawImg({name: "question", x, y, size, callback, rotate:180});
+        }
         else if (cell.isMine && this.isFinished)
         {
           let offsetX = 0, offsetY = 0, rotate = 0;
@@ -2559,9 +2511,9 @@ console.trace({...this.cell(index)})
         {
           this.ctx.save();
           this.ctx.fillStyle = this.style.fill;
-          this.ctx.globalCompositeOperation = "source-atop";
-          this.ctx.shadowBlur = this.shadowSize/1.5;
-          this.ctx.shadowColor = "#FFFFFF7F";
+          // this.ctx.globalCompositeOperation = "source-atop";
+          // this.ctx.shadowBlur = this.shadowSize/1.5;
+          // this.ctx.shadowColor = "#FFFFFF0F";
           const tx = x+size/2,
                 ty = y+size/2;
 
@@ -2575,11 +2527,11 @@ console.trace({...this.cell(index)})
           .finally(callback);
       }
   
-      cell(index)
+      cell(index, table = SETTINGS.table)
       {
         const that = this,
               {x, y} = indexToXY(index),
-              value = SETTINGS.table[index],
+              value = table[index],
               type = value & TYPE,
               isMine = type == MINE,
               isRock = type == ROCK,
@@ -2720,13 +2672,10 @@ console.log(anim.explode)
     
           audio("flag" + (type & FLAG ? "" : "off"));
     
-          e.target.dataset.type = type;
           SETTINGS.stats.mines += val & FLAG ? -1 : val & QUESTION ? 0 : 1;
+          board.showCell({index, hover: true});
         }
-      
-        if (!(table[index] & OPEN + FLAG + QUESTION))
-          delete e.target.dataset.type;
-      
+
         if (isWon())
         {
           SETTINGS.stats.time = new Date().getTime() - SETTINGS.stats.start;
